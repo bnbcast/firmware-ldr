@@ -6,7 +6,7 @@
   <title>SolarTracker ESP32 Live Monitor</title>
   <link rel="icon" type="image/jpeg" href="./favicon.jpg?v=1">
   <link rel="apple-touch-icon" href="./favicon.jpg?v=1">
-  <link rel="stylesheet" href="./styles.css?v=25">
+  <link rel="stylesheet" href="./styles.css?v=26">
   <script type="importmap">
     {
       "imports": {
@@ -436,19 +436,37 @@
         <div id="rig3dPinCalloutLayer" class="rig3d-pin-callout-layer" style="display:none"></div>
         <div id="rig3dHoverTip" class="rig3d-hover-tip" style="display:none" aria-hidden="true"></div>
 
-        <!-- Top-left clean compact telemetry HUD + collapsible ? Kontrol popover -->
-        <div class="rig3d-hud-top">
-          <div class="rig3d-hud-head">
-            <div class="rig3d-hud-title">Rendering 3D · SolarTracker</div>
-            <button id="btnCamHelp" class="hud-help-btn" type="button" aria-expanded="false" aria-controls="rig3dHelpPopover" title="Lihat panduan mouse & keyboard">? Panduan</button>
+        <!-- Top-left stack: compact telemetry HUD + Git-style Build Stage & Undo/Redo bar -->
+        <div class="rig3d-top-left-stack">
+          <div class="rig3d-hud-top">
+            <div class="rig3d-hud-head">
+              <div class="rig3d-hud-title">Rendering 3D · SolarTracker</div>
+              <button id="btnCamHelp" class="hud-help-btn" type="button" aria-expanded="false" aria-controls="rig3dHelpPopover" title="Lihat panduan mouse & keyboard">? Panduan</button>
+            </div>
+            <div id="rig3dHudTelemetry" class="rig3d-hud-sub mono">Menghubungkan telemetri...</div>
+            <div id="rig3dHelpPopover" class="rig3d-help-popover" style="display:none">
+              <div><strong>Putar kamera:</strong> Seret kiri</div>
+              <div><strong>Geser (pan):</strong> Seret kanan / tahan tombol panah</div>
+              <div><strong>Zoom:</strong> Scroll · <strong>Maju/Mundur:</strong> Shift+Scroll atau W/S</div>
+              <div><strong>Naik/Turun:</strong> Alt+Scroll atau Q/E/↑/↓</div>
+              <div><strong>Fokus cepat:</strong> Klik 2× titik mana saja di 3D</div>
+            </div>
           </div>
-          <div id="rig3dHudTelemetry" class="rig3d-hud-sub mono">Menghubungkan telemetri...</div>
-          <div id="rig3dHelpPopover" class="rig3d-help-popover" style="display:none">
-            <div><strong>Putar kamera:</strong> Seret kiri</div>
-            <div><strong>Geser (pan):</strong> Seret kanan / tahan tombol panah</div>
-            <div><strong>Zoom:</strong> Scroll · <strong>Maju/Mundur:</strong> Shift+Scroll atau W/S</div>
-            <div><strong>Naik/Turun:</strong> Alt+Scroll atau Q/E/↑/↓</div>
-            <div><strong>Fokus cepat:</strong> Klik 2× titik mana saja di 3D</div>
+
+          <div id="rig3dStageBar" class="rig3d-stage-bar" data-stage="5" data-wire-count="32" role="region" aria-label="Tahap Rakit dan Undo Redo 3D">
+            <div class="stage-bar-hist" role="group" aria-label="Riwayat Undo Redo">
+              <button id="btnStageUndo" class="stage-bar-btn" type="button" title="Undo perubahan tahap (Ctrl+Z)" aria-label="Undo tahap rakit" disabled>↶ Undo</button>
+              <button id="btnStageRedo" class="stage-bar-btn" type="button" title="Redo tahap rakit (Ctrl+Y)" aria-label="Redo tahap rakit" disabled>↷ Redo</button>
+            </div>
+            <span class="stage-bar-sep" aria-hidden="true"></span>
+            <div class="stage-bar-step" role="group" aria-label="Navigasi Tahap Rakit">
+              <button id="btnStagePrev" class="stage-bar-btn stage-step-btn" type="button" title="Mundur satu tahap" aria-label="Tahap sebelumnya">‹ Mundur</button>
+              <button id="btnStageBadge" class="stage-bar-pill" type="button" title="Buka tab Tahap Rakit di Kontrol 3D">
+                <span id="stageBarCode" class="stage-code mono">c5/5</span>
+                <span id="stageBarLabel" class="stage-label">Switch 5V (HEAD)</span>
+              </button>
+              <button id="btnStageNext" class="stage-bar-btn stage-step-btn" type="button" title="Lanjut satu tahap" aria-label="Tahap berikutnya" disabled>Lanjut ›</button>
+            </div>
           </div>
         </div>
 
@@ -510,6 +528,7 @@
           <div class="side-tabs-bar" role="tablist" aria-label="Kategori Kontrol 3D">
             <button class="side-tab-btn active" type="button" role="tab" aria-selected="true" data-panel-tab="focus">Fokus Area</button>
             <button class="side-tab-btn" type="button" role="tab" aria-selected="false" data-panel-tab="wires">Jalur Kabel</button>
+            <button class="side-tab-btn" type="button" role="tab" aria-selected="false" data-panel-tab="stages">Tahap Rakit</button>
           </div>
 
           <div class="side-panel-scroll">
@@ -557,6 +576,17 @@
                 <button type="button" class="wire-chip" data-wire-net="usb"><span class="wire-dot" style="background:#22c55e"></span>UPS 5V → Switch → ESP32</button>
               </div>
               <div class="side-tip-note">Klik salah satu jalur untuk menyorot kabelnya, lalu klik ujung pin <strong>DARI → KE</strong> untuk menelusuri sambungan.</div>
+            </div>
+
+            <div class="side-tab-pane" data-panel-pane="stages">
+              <div class="stage-panel-actions">
+                <button id="btnPanelStageUndo" class="dock-btn" type="button" disabled title="Undo tahap (Ctrl+Z)">↶ Undo</button>
+                <button id="btnPanelStageRedo" class="dock-btn" type="button" disabled title="Redo tahap (Ctrl+Y)">↷ Redo</button>
+                <button id="btnPanelStageHead" class="dock-btn" type="button" title="Lompat ke Rig Lengkap (c5)">Rig Lengkap</button>
+              </div>
+              <div class="side-group-lbl">Riwayat Tahap Rakit (Git Timeline)</div>
+              <div id="rig3dStageRail" class="stage-commit-rail" role="list" aria-label="Daftar Tahap Rakit 3D"></div>
+              <div id="rig3dStageDetail" class="stage-detail-card"></div>
             </div>
           </div>
 
@@ -608,6 +638,6 @@
 
   <script src="https://unpkg.com/mqtt@5.10.3/dist/mqtt.min.js"></script>
   <script src="./app.js?v=30"></script>
-  <script type="module" src="./rig3d.js?v=5"></script>
+  <script type="module" src="./rig3d.js?v=6"></script>
 </body>
 </html>

@@ -365,4 +365,266 @@ test('HOTSPOT_WIRE_NET_MAP, computeSmartCameraOffset, and computeWireFrameCamera
   }
 });
 
+import {
+  MIN_BUILD_STAGE,
+  FULL_BUILD_STAGE,
+  BUILD_STAGES,
+  clampBuildStage,
+  getBuildStageMeta,
+  isHotspotVisibleAtStage,
+  isPresetVisibleAtStage,
+  isWireNetVisibleAtStage,
+  createStageHistoryState,
+  checkoutStageInHistory,
+  undoStageInHistory,
+  redoStageInHistory
+} from './docs/rig3d-stages.js';
+import {
+  buildAllStageWireSpecs,
+  getWireNetMetaForStage,
+  getHotspotWireNetsForStage
+} from './docs/rig3d-wiring.js';
 
+test('BUILD_STAGES defines 5 ordered commits c1..c5 and c2 preserves XL4015 6V bench safety checklist', () => {
+  assert.equal(MIN_BUILD_STAGE, 1);
+  assert.equal(FULL_BUILD_STAGE, 5);
+  assert.equal(BUILD_STAGES.length, 5);
+  assert.deepEqual(BUILD_STAGES.map((s) => s.code), ['c1', 'c2', 'c3', 'c4', 'c5']);
+  assert.deepEqual(BUILD_STAGES.map((s) => s.id), ['rig_base', 'xl4015', 'ina219', 'ups', 'ups_switch']);
+
+  assert.equal(clampBuildStage(0), 1);
+  assert.equal(clampBuildStage(99), 5);
+  assert.equal(clampBuildStage('bad'), 5);
+
+  const c2 = getBuildStageMeta(2);
+  assert.equal(c2.code, 'c2');
+  assert.equal(c2.safetySteps.length, 7, 'Stage c2 must preserve all 7 calibration steps');
+  assert.ok(c2.safetyWarning.includes('6 V') && c2.safetyWarning.includes('3V3') && c2.safetyWarning.includes('5V'));
+  assert.ok(c2.wiringRows.some((r) => r.from.includes('MG996R kabel cokelat') && r.to.includes('Common GND')));
+});
+
+test('Git-style stage history supports checkout, undo, redo, branch truncation, and boundary no-ops', () => {
+  let hist = createStageHistoryState(5);
+  assert.equal(hist.currentStage, 5);
+  assert.deepEqual(hist.undoStack, []);
+  assert.deepEqual(hist.redoStack, []);
+
+  // Boundary no-ops
+  const noopUndo = undoStageInHistory(hist);
+  assert.equal(noopUndo.changed, false);
+  const noopSame = checkoutStageInHistory(hist, 5);
+  assert.equal(noopSame.changed, false);
+
+  // Checkout c5 -> c2 -> c3
+  hist = checkoutStageInHistory(hist, 2);
+  assert.equal(hist.changed, true);
+  assert.equal(hist.currentStage, 2);
+  assert.deepEqual(hist.undoStack, [5]);
+  assert.deepEqual(hist.redoStack, []);
+
+  hist = checkoutStageInHistory(hist, 3);
+  assert.equal(hist.currentStage, 3);
+  assert.deepEqual(hist.undoStack, [5, 2]);
+
+  // Undo c3 -> c2 -> c5
+  hist = undoStageInHistory(hist);
+  assert.equal(hist.changed, true);
+  assert.equal(hist.currentStage, 2);
+  assert.deepEqual(hist.undoStack, [5]);
+  assert.deepEqual(hist.redoStack, [3]);
+
+  hist = undoStageInHistory(hist);
+  assert.equal(hist.currentStage, 5);
+  assert.deepEqual(hist.undoStack, []);
+  assert.deepEqual(hist.redoStack, [3, 2]);
+
+  // Redo c5 -> c2, then checkout c1 clears redoStack
+  hist = redoStageInHistory(hist);
+  assert.equal(hist.changed, true);
+  assert.equal(hist.currentStage, 2);
+  assert.deepEqual(hist.redoStack, [3]);
+
+  hist = checkoutStageInHistory(hist, 1);
+  assert.equal(hist.currentStage, 1);
+  assert.deepEqual(hist.undoStack, [5, 2]);
+  assert.deepEqual(hist.redoStack, []);
+
+  const noopRedo = redoStageInHistory(hist);
+  assert.equal(noopRedo.changed, false);
+});
+
+test('Stage-aware wire specs transition accurately across c1..c5 (including pre-INA219 XL4015 and pre-Switch UPS bypass jumpers)', () => {
+  assert.equal(buildAllStageWireSpecs().length, 34, 'Master list holds 32 final wires + 2 pre-module direct jumpers');
+
+  const w1 = buildPinAccurateWireSpecs(1);
+  const w2 = buildPinAccurateWireSpecs(2);
+  const w3 = buildPinAccurateWireSpecs(3);
+  const w4 = buildPinAccurateWireSpecs(4);
+  const w5 = buildPinAccurateWireSpecs(5);
+
+  assert.equal(w1.length, 16, 'c1 base rig has 16 wires');
+  assert.equal(w2.length, 23, 'c2 pre-INA219 XL4015 + Servo + 3 Common GND has 23 wires');
+  assert.equal(w3.length, 28, 'c3 adds INA219 (+6 new, replaces direct scc-xl-load-pos) = 28 wires');
+  assert.equal(w4.length, 31, 'c4 adds UPS 5V + direct UPS+->5V = 31 wires');
+  assert.equal(w5.length, 32, 'c5 splits UPS+->5V through KCD11 Switch = 32 wires');
+
+  const ids2 = new Set(w2.map((w) => w.id));
+  assert.ok(ids2.has('scc-xl-load-pos'), 'c2 must use direct SCC LOAD+ -> XL4015 IN+');
+  assert.ok(ids2.has('scc-xl-load-neg'));
+  assert.ok(ids2.has('xl-servo-6v'));
+  assert.ok(ids2.has('pwm-esp18-servo'));
+  assert.equal(w2.filter((w) => w.category === 'gnd').length, 3, 'c2 has 3 Common GND wires');
+  assert.ok(!ids2.has('scc-ina-load-pos') && !ids2.has('ina-xl-in-pos') && !ids2.has('ina-gnd-bb'));
+  assert.ok(!ids2.has('ups-esp-5v-direct') && !ids2.has('ups-sw-in') && !ids2.has('sw-esp-5v'));
+
+  const ids3 = new Set(w3.map((w) => w.id));
+  assert.ok(!ids3.has('scc-xl-load-pos'), 'c3 replaces direct SCC->XL4015 jumper with INA219 shunt pair');
+  assert.ok(ids3.has('scc-ina-load-pos') && ids3.has('ina-xl-in-pos'));
+  assert.equal(w3.filter((w) => w.category === 'gnd').length, 4, 'c3 adds 4th Common GND wire from INA219');
+
+  const ids4 = new Set(w4.map((w) => w.id));
+  assert.ok(ids4.has('ups-esp-5v-direct'), 'c4 uses direct UPS+ -> ESP32 5V before Switch c5');
+  assert.ok(ids4.has('usb-ups-5v-in') && ids4.has('ups-esp-gnd'));
+  assert.ok(!ids4.has('ups-sw-in') && !ids4.has('sw-esp-5v'));
+
+  const ids5 = new Set(w5.map((w) => w.id));
+  assert.ok(!ids5.has('ups-esp-5v-direct'), 'c5 splits direct jumper via Switch 5V');
+  assert.ok(ids5.has('ups-sw-in') && ids5.has('sw-esp-5v'));
+});
+
+test('Stage visibility predicates, wire net metadata, pins, and callouts hide unconnected modules accurately', () => {
+  // Hotspots & presets
+  assert.equal(isHotspotVisibleAtStage('xl4015', 1), false);
+  assert.equal(isHotspotVisibleAtStage('xl4015', 2), true);
+  assert.equal(isHotspotVisibleAtStage('ina219', 2), false);
+  assert.equal(isHotspotVisibleAtStage('ina219', 3), true);
+  assert.equal(isHotspotVisibleAtStage('ups', 3), false);
+  assert.equal(isHotspotVisibleAtStage('ups', 4), true);
+  assert.equal(isHotspotVisibleAtStage('ups_switch', 4), false);
+  assert.equal(isHotspotVisibleAtStage('ups_switch', 5), true);
+
+  assert.equal(isPresetVisibleAtStage('ina219', 2), false);
+  assert.equal(isPresetVisibleAtStage('xl4015', 2), true);
+  assert.equal(isWireNetVisibleAtStage('ina219', 2), false);
+  assert.equal(isWireNetVisibleAtStage('buck12v', 2), true);
+  assert.equal(isWireNetVisibleAtStage('usb', 3), false);
+  assert.equal(isWireNetVisibleAtStage('usb', 4), true);
+
+  assert.deepEqual(getHotspotWireNetsForStage('esp32', 1), ['i2c', 'ldr']);
+  assert.deepEqual(getHotspotWireNetsForStage('xl4015', 2), ['buck12v', 'servo6v', 'gnd']);
+
+  // Stage-aware net labels
+  assert.equal(getWireNetMetaForStage('gnd', 2).label, 'Common GND (3 Kabel)');
+  assert.equal(getWireNetMetaForStage('buck12v', 2).label, 'SCC LOAD 12V → XL4015');
+  assert.equal(getWireNetMetaForStage('usb', 4).label, 'UPS 5V → ESP32 (Tanpa Switch)');
+  assert.equal(getWireNetMetaForStage('gnd', 5).label, 'Common GND (4 Kabel)');
+
+  // Pins at c2
+  const pins2 = buildClickablePinRegistry(2);
+  assert.equal(pins2.find((p) => p.id === 'ina-vcc').stageVisible, false);
+  assert.equal(pins2.find((p) => p.id === 'ups-out-p').stageVisible, false);
+  assert.equal(pins2.find((p) => p.id === 'sw-ups-in').stageVisible, false);
+  assert.equal(pins2.find((p) => p.id === 'xl-in-p').stageVisible, true);
+  assert.deepEqual(pins2.find((p) => p.id === 'xl-in-p').wireIds, ['scc-xl-load-pos']);
+  assert.equal(pins2.find((p) => p.id === 'esp-usb').status, 'AKTIF');
+  assert.equal(pins2.find((p) => p.id === 'esp-pwr-5v').status, 'KOSONG');
+  assert.equal(pins2.find((p) => p.id === 'bb-gnd-ina').status, 'KOSONG');
+  assert.deepEqual(pins2.find((p) => p.id === 'esp-gnd-bb').wireIds, ['gnd-esp-bb', 'gnd-xl-bb', 'gnd-servo-bb']);
+
+  // Pins at c4
+  const pins4 = buildClickablePinRegistry(4);
+  assert.equal(pins4.find((p) => p.id === 'esp-pwr-5v').status, 'AKTIF');
+  assert.deepEqual(pins4.find((p) => p.id === 'esp-pwr-5v').wireIds, ['ups-esp-5v-direct']);
+  assert.equal(pins4.find((p) => p.id === 'sw-ups-in').stageVisible, false);
+
+  // Callouts at c2 vs c5
+  const callouts2 = buildMacroPinCallouts(2);
+  assert.ok(!callouts2.some((c) => c.group === 'ina219'));
+  assert.ok(!callouts2.some((c) => c.group === 'ups'));
+  assert.ok(callouts2.find((c) => c.id === 'pin-bb-gnd').label.includes('3 Kabel'));
+  assert.ok(callouts2.find((c) => c.id === 'pin-xl-in').label.includes('SCC LOAD+'));
+});
+
+test('Exhaustive verification across all 5 stages (c1..c5): endpoints, bidirectional wireIds, spline clearance, pin text, and DuPont plugs', () => {
+  const externalOrigins = new Set(['panel-pos', 'panel-neg', 'usbc-host']);
+  const deckMinX = -0.005 - 1.045 / 2;
+  const deckMaxX = -0.005 + 1.045 / 2;
+  const deckMinZ = RIG_DIMS.deckZ + 0.008 - 0.168 / 2;
+  const deckMaxZ = RIG_DIMS.deckZ + 0.008 + 0.168 / 2;
+  const deckTopY = RIG_DIMS.deckY + 0.006;
+
+  // Verify every master spline stays above ground and never clips through the electronics deck plate
+  for (const wire of buildAllStageWireSpecs()) {
+    for (let i = 0; i < wire.points.length; i++) {
+      const pt = wire.points[i];
+      assert.ok(pt[1] >= 0, `Wire ${wire.id} point ${i} below ground: ${pt[1]}`);
+      const inDeckFootprint = pt[0] >= deckMinX && pt[0] <= deckMaxX && pt[2] >= deckMinZ && pt[2] <= deckMaxZ;
+      if (i > 0 && i < wire.points.length - 1 && inDeckFootprint) {
+        assert.ok(pt[1] >= deckTopY, `Wire ${wire.id} interior point ${i} (${pt.join(',')}) clips below deck top y=${deckTopY}`);
+      }
+    }
+  }
+
+  const expectedPlugsByStage = {
+    1: { goouuu: 10, goouuuAux: 0, goouuuPwr: 0, breadboard: 0, ina219: 0, rtc: 4, ldr1: 3, ldr2: 3 },
+    2: { goouuu: 12, goouuuAux: 0, goouuuPwr: 0, breadboard: 3, ina219: 0, rtc: 4, ldr1: 3, ldr2: 3 },
+    3: { goouuu: 12, goouuuAux: 3, goouuuPwr: 0, breadboard: 4, ina219: 4, rtc: 4, ldr1: 3, ldr2: 3 },
+    4: { goouuu: 12, goouuuAux: 3, goouuuPwr: 2, breadboard: 4, ina219: 4, rtc: 4, ldr1: 3, ldr2: 3 },
+    5: { goouuu: 12, goouuuAux: 3, goouuuPwr: 2, breadboard: 4, ina219: 4, rtc: 4, ldr1: 3, ldr2: 3 }
+  };
+
+  for (let s = 1; s <= 5; s++) {
+    const wires = buildPinAccurateWireSpecs(s);
+    const pins = buildClickablePinRegistry(s);
+    const pinById = new Map(pins.map((p) => [p.id, p]));
+    const wireById = new Map(wires.map((w) => [w.id, w]));
+
+    for (const w of wires) {
+      const checkEndpoint = (pinId, pt, side) => {
+        if (externalOrigins.has(pinId)) return;
+        const pin = pinById.get(pinId);
+        assert.ok(pin, `Stage c${s} wire ${w.id} ${side} pin ${pinId} missing`);
+        assert.equal(pin.stageVisible, true, `Stage c${s} wire ${w.id} ${side} pin ${pinId} must be visible`);
+        const dist = Math.hypot(pin.pos[0] - pt[0], pin.pos[1] - pt[1], pin.pos[2] - pt[2]);
+        assert.ok(dist < 0.002, `Stage c${s} wire ${w.id} ${side} endpoint distance=${dist}`);
+        assert.ok(pin.wireIds.includes(w.id), `Stage c${s} pin ${pinId} missing backref to ${w.id}`);
+      };
+      checkEndpoint(w.fromPinId, w.points[0], 'from');
+      checkEndpoint(w.toPinId, w.points[w.points.length - 1], 'to');
+    }
+
+    for (const p of pins) {
+      for (const wid of p.wireIds) {
+        assert.ok(wireById.has(wid), `Stage c${s} pin ${p.id} references inactive/missing wire ${wid}`);
+      }
+      if (!p.stageVisible) {
+        assert.equal(p.wireIds.length, 0, `Stage c${s} hidden pin ${p.id} must have 0 wireIds`);
+      } else if (p.status === 'KOSONG') {
+        assert.equal(p.wireIds.length, 0, `Stage c${s} KOSONG pin ${p.id} must have 0 wireIds`);
+      } else if (p.status === 'AKTIF' && p.id !== 'esp-usb') {
+        assert.ok(p.wireIds.length >= 1, `Stage c${s} AKTIF pin ${p.id} missing wireIds`);
+      }
+    }
+
+    // Verify no future-stage module terminology leaks into earlier visible pins
+    if (s < 3) {
+      if (pinById.get('xl-out-n').stageVisible) {
+        assert.ok(!pinById.get('xl-out-n').detail.includes('INA219'));
+      }
+      assert.ok(!pinById.get('esp-aux-gnd').connectedTo[0].includes('Breadboard'));
+    }
+    if (s === 4) {
+      for (const pid of ['esp-usb', 'esp-pwr-5v', 'ups-out-p']) {
+        const txt = [pinById.get(pid).pinName, ...pinById.get(pid).connectedTo, pinById.get(pid).detail].join(' ');
+        assert.ok(!txt.includes('Switch'), `Stage c4 pin ${pid} should not reference future Switch: ${txt}`);
+      }
+    }
+
+    // Verify DuPont plug counts match active stage hardware
+    const plugCounts = {};
+    for (const [grp, list] of Object.entries(ACTIVE_DUPONT_PLUGS)) {
+      plugCounts[grp] = list.filter((plug) => (plug.minStage ?? 1) <= s).length;
+    }
+    assert.deepEqual(plugCounts, expectedPlugsByStage[s], `DuPont plug mismatch at stage c${s}`);
+  }
+});

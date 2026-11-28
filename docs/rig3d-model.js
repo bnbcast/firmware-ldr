@@ -36,6 +36,12 @@ import {
 } from './rig3d-textures.js';
 import { computePushrodGeometry } from './rig3d-math.js';
 import {
+  FULL_BUILD_STAGE,
+  clampBuildStage,
+  isStageRangeActive,
+  HOTSPOT_MIN_STAGE
+} from './rig3d-stages.js';
+import {
   RIG_DIMS,
   BOARD_ORIGINS,
   GOOUUU_GEO,
@@ -56,8 +62,9 @@ import {
   getLdrPinPos,
   getXl4015PinPos,
   getSccTerminalPos,
-  buildPinAccurateWireSpecs,
+  buildAllStageWireSpecs,
   buildClickablePinRegistry,
+  resolvePinForStage,
   buildMacroPinCallouts
 } from './rig3d-wiring.js';
 
@@ -81,6 +88,7 @@ function makeCableEntry(spec) {
   mesh.userData.wireId = spec.id;
   mesh.userData.wireCategory = spec.category;
   mesh.userData.wireSpec = spec;
+  mesh.userData.stageVisible = true;
 
   // Wider invisible tube proxy on WIRE_HIT_LAYER makes clicking any thin jumper wire effortless!
   const hitRadius = Math.max(spec.radius * 3.1, 0.0072);
@@ -89,10 +97,14 @@ function makeCableEntry(spec) {
   hitMesh.layers.set(WIRE_HIT_LAYER);
   hitMesh.userData.wireId = spec.id;
   hitMesh.userData.wireSpec = spec;
+  hitMesh.userData.stageVisible = true;
 
   return {
     id: spec.id,
     spec,
+    minStage: spec.minStage ?? 1,
+    maxStage: spec.maxStage ?? FULL_BUILD_STAGE,
+    stageActive: true,
     fromPin: spec.fromPin,
     toPin: spec.toPin,
     mesh,
@@ -112,18 +124,21 @@ function addHotspotProxy(parent, id, size, offset = [0, 0, 0]) {
   );
   proxy.position.set(offset[0], offset[1], offset[2]);
   proxy.userData.hotspotId = id;
+  proxy.userData.minStage = HOTSPOT_MIN_STAGE[id] ?? 1;
+  proxy.userData.stageVisible = true;
   proxy.layers.set(HOTSPOT_LAYER);
   parent.add(proxy);
   return proxy;
 }
 
-function buildInstancedBatch(geometry, material, matrices, name) {
-  if (!matrices.length) return null;
-  const inst = new THREE.InstancedMesh(geometry, material, matrices.length);
+function buildInstancedBatch(geometry, material, entries, name) {
+  if (!entries.length) return null;
+  const inst = new THREE.InstancedMesh(geometry, material, entries.length);
   inst.name = name;
-  for (let i = 0; i < matrices.length; i++) {
-    inst.setMatrixAt(i, matrices[i]);
+  for (let i = 0; i < entries.length; i++) {
+    inst.setMatrixAt(i, entries[i].matrix);
   }
+  inst.userData.stageEntries = entries;
   inst.instanceMatrix.needsUpdate = true;
   inst.computeBoundingSphere();
   return inst;
@@ -321,22 +336,6 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   });
   const microUsbTopTex = createMicroUsbTopTexture(maxAniso);
   const usbCTopTex = createUsbCTopTexture(maxAniso);
-  const ds1307Tex = createIcLabelTexture(maxAniso, {
-    lines: ['DS1307Z', '1932A4'],
-    bgHex: '#181c22',
-    textHex: '#d5dde8',
-    pinDot: true
-  });
-  const at24c32Tex = createIcLabelTexture(maxAniso, {
-    lines: ['ATMLH', '24C32N'],
-    bgHex: '#181c22',
-    textHex: '#d5dde8',
-    pinDot: true
-  });
-  const res332Tex = createIcLabelTexture(maxAniso, { lines: ['332'], bgHex: '#16191f', textHex: '#f1f5f9' });
-  const res201Tex = createIcLabelTexture(maxAniso, { lines: ['201'], bgHex: '#16191f', textHex: '#f1f5f9' });
-  const res514Tex = createIcLabelTexture(maxAniso, { lines: ['514'], bgHex: '#16191f', textHex: '#f1f5f9', rotateDeg: 90 });
-  const res155Tex = createIcLabelTexture(maxAniso, { lines: ['155'], bgHex: '#16191f', textHex: '#f1f5f9', rotateDeg: 90 });
   const coinCellTopTex = createCoinCellTopTexture(maxAniso);
   const lm393Ldr1Tex = createLm393Texture(maxAniso, 'LDR1');
   const lm393Ldr2Tex = createLm393Texture(maxAniso, 'LDR2');
@@ -399,7 +398,7 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     sccDisplay.texture, wattDisplay.texture, xl4015Tex, cap220TopTex, cap47TopTex,
     breadboardTex, tinyRtcTex, goouuuTex, nodeMcuTex, rfShieldTex,
     ams33Tex, cp2102Tex, tant107Tex, c226Tex, res103Tex, reg5vTex, ss24Tex, res102Tex,
-    microUsbTopTex, usbCTopTex, coinCellTopTex, ds1307Tex, at24c32Tex, res332Tex, res201Tex, res514Tex, res155Tex,
+    microUsbTopTex, usbCTopTex, coinCellTopTex,
     lm393Ldr1Tex, lm393Ldr2Tex, cdsTex, mg996rLabelTex, ina219Tex, r100Tex, ina219IcTex,
     upsQfTex, cap220_16vTopTex, bat18650Tex, ss54Tex, ind2R2Tex, upsU1Tex, upsU4Tex, upsProtTex, upsMosTex,
     upsSwitchCarrierTex, rockerPaddleTex
@@ -414,17 +413,22 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   const smdMats = [];
 
   const _dummy = new THREE.Object3D();
-  const pushInst = (list, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => {
+  const _zeroScaleMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+  const pushInst = (list, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1, minStage = 1, maxStage = FULL_BUILD_STAGE) => {
     _dummy.position.set(x, y, z);
     _dummy.rotation.set(rx, ry, rz);
     _dummy.scale.set(sx, sy, sz);
     _dummy.updateMatrix();
-    list.push(_dummy.matrix.clone());
+    list.push({
+      matrix: _dummy.matrix.clone(),
+      minStage,
+      maxStage
+    });
   };
 
-  const pushDupontPlug = (pinWorld) => {
-    pushInst(dupontMats, pinWorld[0], pinWorld[1] - 0.0052, pinWorld[2], 0, 0, 0, 1, 1, 1);
-    pushInst(crimpMats, pinWorld[0], pinWorld[1] - 0.0046, pinWorld[2] + 0.00145, 0, 0, 0, 1, 1, 1);
+  const pushDupontPlug = (pinWorld, minStage = 1, maxStage = FULL_BUILD_STAGE) => {
+    pushInst(dupontMats, pinWorld[0], pinWorld[1] - 0.0052, pinWorld[2], 0, 0, 0, 1, 1, 1, minStage, maxStage);
+    pushInst(crimpMats, pinWorld[0], pinWorld[1] - 0.0046, pinWorld[2] + 0.00145, 0, 0, 0, 1, 1, 1, minStage, maxStage);
   };
 
   // ==========================================================================
@@ -853,9 +857,9 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   inaGroup.add(inaPcb);
   const inaTopY = INA219_GEO.thick * 0.5; // 0.002
 
-  // 2 mounting standoffs/nuts at rear corners
+  // 2 mounting standoffs/nuts at rear corners (Stage c3: INA219)
   for (const bx of [-0.0225, 0.0225]) {
-    pushInst(boltMats, BOARD_ORIGINS.ina219.x + bx, BOARD_ORIGINS.ina219.y + 0.0032, BOARD_ORIGINS.ina219.z - 0.0185, 0, 0, 0, 0.72, 0.65, 0.72);
+    pushInst(boltMats, BOARD_ORIGINS.ina219.x + bx, BOARD_ORIGINS.ina219.y + 0.0032, BOARD_ORIGINS.ina219.z - 0.0185, 0, 0, 0, 0.72, 0.65, 0.72, 3);
   }
 
   // Rear (-Z) 2-pin royal-blue screw terminal block (VIN+ from SCC LOAD+, VIN- to XL4015 IN+)
@@ -933,10 +937,10 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   inaGroup.add(inaHdrBase);
   for (let i = 0; i < 6; i++) {
     const pw = getIna219PinPos(i).world;
-    pushInst(goldPinMats, pw[0], BOARD_ORIGINS.ina219.y + 0.0085, pw[2], 0, 0, 0, 1, 1, 1);
+    pushInst(goldPinMats, pw[0], BOARD_ORIGINS.ina219.y + 0.0085, pw[2], 0, 0, 0, 1, 1, 1, 3);
   }
   for (const plug of ACTIVE_DUPONT_PLUGS.ina219) {
-    pushDupontPlug(getIna219PinPos(plug.index).world);
+    pushDupontPlug(getIna219PinPos(plug.index).world, plug.minStage ?? 3);
   }
 
   hotspotAnchors.ina219 = new THREE.Object3D();
@@ -1047,7 +1051,7 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     potBody.position.set(tx, 0.0088, 0.0125);
     potBody.castShadow = true;
     xlGroup.add(potBody);
-    pushInst(brassScrewMats, BOARD_ORIGINS.xl.x + tx, BOARD_ORIGINS.xl.y + 0.0165, BOARD_ORIGINS.xl.z + 0.0095, 0, 0, 0, 1.05, 0.9, 1.05);
+    pushInst(brassScrewMats, BOARD_ORIGINS.xl.x + tx, BOARD_ORIGINS.xl.y + 0.0165, BOARD_ORIGINS.xl.z + 0.0095, 0, 0, 0, 1.05, 0.9, 1.05, 2);
   }
 
   // Black TO-263-5 XL4015E1 Switching IC + silver thermal tab + 5 gull-wing legs!
@@ -1114,11 +1118,12 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     breadGroup.add(tab);
   }
 
-  // 6 Black 1-Pin DuPont Jumper Plugs inserted into the front Blue (−) Common Ground Bus Rail!
+  // 1-Pin DuPont Jumper Plugs inserted into the front Blue (−) Common Ground Bus Rail!
   for (const plug of ACTIVE_DUPONT_PLUGS.breadboard) {
     const pw = getBreadboardGndPinPos(plug.slot).world;
-    pushInst(goldPinMats, pw[0], BOARD_ORIGINS.bread.y + 0.0082, pw[2], 0, 0, 0, 0.8, 0.7, 0.8);
-    pushDupontPlug(pw);
+    const ms = plug.minStage ?? 2;
+    pushInst(goldPinMats, pw[0], BOARD_ORIGINS.bread.y + 0.0082, pw[2], 0, 0, 0, 0.8, 0.7, 0.8, ms);
+    pushDupontPlug(pw, ms);
   }
 
   hotspotAnchors.breadboard = new THREE.Object3D();
@@ -1561,13 +1566,13 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   espGroup.add(pwrBoardLed, espLed, espBlueLed);
 
   for (const plug of ACTIVE_DUPONT_PLUGS.goouuu) {
-    pushDupontPlug(getGoouuuPinPos(plug.side, plug.index, plug.row).world);
+    pushDupontPlug(getGoouuuPinPos(plug.side, plug.index, plug.row).world, plug.minStage ?? 1);
   }
   for (const plug of ACTIVE_DUPONT_PLUGS.goouuuAux) {
-    pushDupontPlug(getGoouuuAuxPinPos(plug.pinName).world);
+    pushDupontPlug(getGoouuuAuxPinPos(plug.pinName).world, plug.minStage ?? 3);
   }
   for (const plug of ACTIVE_DUPONT_PLUGS.goouuuPwr) {
-    pushDupontPlug(getGoouuuPwrPinPos(plug.pinName).world);
+    pushDupontPlug(getGoouuuPwrPinPos(plug.pinName).world, plug.minStage ?? 4);
   }
 
   hotspotAnchors.esp32 = new THREE.Object3D();
@@ -1575,39 +1580,39 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   espGroup.add(hotspotAnchors.esp32);
   hotspotProxies.push(addHotspotProxy(espGroup, 'esp32', [0.155, 0.065, 0.11], [0.004, 0.018, 0]));
 
-  // --- 6D. PHOTOREALISTIC HW-111 TINY RTC DS1307 + AT24C32 + TOP CR2032 COIN CELL ---
+  // --- 6D. SQUARE ROYAL-BLUE TINY RTC I2C MODULE + BROWN CR2032 HOLDER + GOLD CLIP (Photo Match) ---
   const rtcGroup = new THREE.Group();
   rtcGroup.name = 'TinyRtcGroup';
   rtcGroup.position.set(BOARD_ORIGINS.rtc.x, BOARD_ORIGINS.rtc.y, BOARD_ORIGINS.rtc.z);
   deckGroup.add(rtcGroup);
 
   const rtcBluePcbMat = new THREE.MeshStandardMaterial({
-    color: 0x083e6d,
-    roughness: 0.36,
+    color: 0x094e8a,
+    roughness: 0.34,
     metalness: 0.14,
     bumpMap: pcbBump,
     bumpScale: 0.0006
   });
   const rtcTopMat = new THREE.MeshStandardMaterial({
     map: tinyRtcTex,
-    roughness: 0.34,
+    roughness: 0.32,
     metalness: 0.12,
     bumpMap: pcbBump,
     bumpScale: 0.0005
   });
-  // Widened 0.076m x 0.056m PCB shifted +0.010m so left P2 pins stay 1:1 with getTinyRtcPinPos(-0.023)
-  // while leaving generous dedicated space for both ALL HW-111 ICs/resistors AND the top-mounted CR2032 coin cell!
+  // Square 0.056m x 0.058m PCB centered at localX = 0 so left P2 pins stay 1:1 with getTinyRtcPinPos(-0.023)
   const rtcPcb = new THREE.Mesh(
-    new THREE.BoxGeometry(0.076, 0.0044, 0.056),
+    new THREE.BoxGeometry(0.056, 0.0038, 0.058),
     [rtcBluePcbMat, rtcBluePcbMat, rtcTopMat, rtcBluePcbMat, rtcBluePcbMat, rtcBluePcbMat]
   );
-  rtcPcb.position.set(0.010, 0.0022, 0);
+  rtcPcb.position.set(0.0, 0.0019, 0.0);
   rtcPcb.castShadow = true;
+  rtcPcb.receiveShadow = true;
   rtcGroup.add(rtcPcb);
-  const rtcTopY = 0.0044;
+  const rtcTopY = 0.0038;
 
   // Left (-X) P2 Black Pin Header Shroud facing ESP32 (7 pins aligned 1:1 with getTinyRtcPinPos!)
-  const rtcHdrBase = new THREE.Mesh(new THREE.BoxGeometry(0.0042, 0.0028, 0.044), dupontHousingMat);
+  const rtcHdrBase = new THREE.Mesh(new THREE.BoxGeometry(0.0042, 0.0028, 0.0425), dupontHousingMat);
   rtcHdrBase.position.set(-0.023, rtcTopY + 0.0014, 0);
   rtcGroup.add(rtcHdrBase);
 
@@ -1619,109 +1624,76 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     pushDupontPlug(getTinyRtcPinPos(plug.index).world);
   }
 
-  const rtcOx = -0.0020;
+  // Dark-Brown Matte Plastic CR2032 Battery Holder (matches uploaded photo)
+  const holderBrownMat = new THREE.MeshStandardMaterial({
+    color: 0x4c3b30,
+    roughness: 0.72,
+    metalness: 0.05
+  });
+  const holderCx = 0.000;
+  const holderCz = 0.000;
 
-  // 1) X1 — Cylindrical Silver 32.768 kHz Quartz Watch Crystal + twin bent wire leads
-  const x1Can = new THREE.Mesh(new THREE.CylinderGeometry(0.0023, 0.0023, 0.0142, 16), brushedSteelMat);
-  x1Can.rotation.x = Math.PI / 2;
-  x1Can.position.set(-0.0085 + rtcOx, rtcTopY + 0.0023, -0.0112);
-  x1Can.castShadow = true;
-  rtcGroup.add(x1Can);
-  for (const lx of [-0.0095 + rtcOx, -0.0075 + rtcOx]) {
-    const x1Lead = new THREE.Mesh(new THREE.CylinderGeometry(0.00036, 0.00036, 0.0045, 8), brushedSteelMat);
-    x1Lead.rotation.x = Math.PI / 2;
-    x1Lead.position.set(lx, rtcTopY + 0.0011, -0.0022);
-    rtcGroup.add(x1Lead);
+  // Recessed floor pad inside the CR2032 holder
+  const holderFloor = new THREE.Mesh(new THREE.CylinderGeometry(0.0155, 0.0160, 0.0018, 28), holderBrownMat);
+  holderFloor.position.set(holderCx, rtcTopY + 0.0009, holderCz);
+  rtcGroup.add(holderFloor);
+
+  // Twin side retaining rails along -X and +X
+  for (const sx of [-0.0148, 0.0148]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.0042, 0.0056, 0.0255), holderBrownMat);
+    rail.position.set(holderCx + sx, rtcTopY + 0.0028, holderCz - 0.0035);
+    rail.castShadow = true;
+    rtcGroup.add(rail);
   }
 
-  // 2) D1 — Red-Orange Glass MELF SMD Diode (1N4148) with black cathode band & silver end caps
-  const d1GlassMat = new THREE.MeshStandardMaterial({ color: 0xd94826, roughness: 0.20, metalness: 0.12 });
-  const d1Body = new THREE.Mesh(new THREE.CylinderGeometry(0.00155, 0.00155, 0.0052, 14), d1GlassMat);
-  d1Body.rotation.z = Math.PI / 2;
-  d1Body.position.set(0.0092 + rtcOx, rtcTopY + 0.0016, -0.0166);
-  const d1Cathode = new THREE.Mesh(new THREE.CylinderGeometry(0.0016, 0.0016, 0.0013, 14), smdDarkMat);
-  d1Cathode.rotation.z = Math.PI / 2;
-  d1Cathode.position.set(0.0076 + rtcOx, rtcTopY + 0.0016, -0.0166);
-  rtcGroup.add(d1Body, d1Cathode);
-  for (const dx of [0.0059 + rtcOx, 0.0125 + rtcOx]) {
-    const d1Cap = new THREE.Mesh(new THREE.CylinderGeometry(0.00165, 0.00165, 0.0014, 14), brushedSteelMat);
-    d1Cap.rotation.z = Math.PI / 2;
-    d1Cap.position.set(dx, rtcTopY + 0.0016, -0.0166);
-    rtcGroup.add(d1Cap);
+  // Front (+Z) rounded crescent retaining wall gripping the coin cell rim
+  const holderArc = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.0172, 0.0175, 0.0056, 28, 1, false, -Math.PI * 0.48, Math.PI * 0.96),
+    holderBrownMat
+  );
+  holderArc.position.set(holderCx, rtcTopY + 0.0028, holderCz);
+  holderArc.castShadow = true;
+  rtcGroup.add(holderArc);
+
+  // Rear (-Z) shoulder blocks framing the brass + spring clip
+  for (const sx of [-0.0112, 0.0112]) {
+    const shoulder = new THREE.Mesh(new THREE.BoxGeometry(0.0092, 0.0056, 0.0072), holderBrownMat);
+    shoulder.position.set(holderCx + sx, rtcTopY + 0.0028, holderCz - 0.0142);
+    shoulder.castShadow = true;
+    rtcGroup.add(shoulder);
   }
 
-  // 3) 7 Labeled SMD Resistors: R6(514), R4(155), R5(102), R8(201), R1(332), R3(332), R2(332)
-  const res332TopMat = new THREE.MeshStandardMaterial({ map: res332Tex, roughness: 0.38, metalness: 0.14 });
-  const res201TopMat = new THREE.MeshStandardMaterial({ map: res201Tex, roughness: 0.38, metalness: 0.14 });
-  const res514TopMat = new THREE.MeshStandardMaterial({ map: res514Tex, roughness: 0.38, metalness: 0.14 });
-  const res155TopMat = new THREE.MeshStandardMaterial({ map: res155Tex, roughness: 0.38, metalness: 0.14 });
-  addSmdPart(rtcGroup, 0.0004 + rtcOx, rtcTopY + 0.0008, -0.0141, 0.0025, 0.0015, 0.0048, res514TopMat, smdDarkMat, false);
-  addSmdPart(rtcGroup, 0.0004 + rtcOx, rtcTopY + 0.0008, -0.0037, 0.0025, 0.0015, 0.0048, res155TopMat, smdDarkMat, false);
-  addSmdPart(rtcGroup, 0.0092 + rtcOx, rtcTopY + 0.0008, -0.0109, 0.0050, 0.0015, 0.0025, res102TopMat, smdDarkMat, true);
-  addSmdPart(rtcGroup, 0.0092 + rtcOx, rtcTopY + 0.0008, -0.0053, 0.0050, 0.0015, 0.0025, res201TopMat, smdDarkMat, true);
-  addSmdPart(rtcGroup, 0.0092 + rtcOx, rtcTopY + 0.0008,  0.0003, 0.0050, 0.0015, 0.0025, res332TopMat, smdDarkMat, true);
-  addSmdPart(rtcGroup, -0.0102 + rtcOx, rtcTopY + 0.0008, 0.0223, 0.0048, 0.0015, 0.0024, res332TopMat, smdDarkMat, true);
-  addSmdPart(rtcGroup,  0.0090 + rtcOx, rtcTopY + 0.0008, 0.0223, 0.0048, 0.0015, 0.0024, res332TopMat, smdDarkMat, true);
+  // Bright Gold/Brass Spring Battery Clip protruding from rear (-Z) pocket over the battery rim
+  const clipBridge = new THREE.Mesh(new THREE.BoxGeometry(0.0148, 0.0010, 0.0054), goldPinMat);
+  clipBridge.position.set(holderCx, rtcTopY + 0.0063, holderCz - 0.0138);
+  const clipTongue = new THREE.Mesh(new THREE.BoxGeometry(0.0062, 0.0012, 0.0098), goldPinMat);
+  clipTongue.position.set(holderCx, rtcTopY + 0.0054, holderCz - 0.0180);
+  clipTongue.rotation.x = 0.28;
+  const clipFoot = new THREE.Mesh(new THREE.BoxGeometry(0.0066, 0.0038, 0.0022), goldPinMat);
+  clipFoot.position.set(holderCx, rtcTopY + 0.0019, holderCz - 0.0218);
+  const clipTopArm = new THREE.Mesh(new THREE.BoxGeometry(0.0056, 0.0009, 0.0036), goldPinMat);
+  clipTopArm.position.set(holderCx, rtcTopY + 0.0065, holderCz - 0.0114);
+  rtcGroup.add(clipBridge, clipTongue, clipFoot, clipTopArm);
 
-  // 4) C1 & C2 — 2x Tan/Brown MLCC Bypass Ceramic Capacitors
-  addSmdPart(rtcGroup, -0.0021 + rtcOx, rtcTopY + 0.0010, 0.0105, 0.0023, 0.0019, 0.0045, null, espTanCapMat, false);
-  addSmdPart(rtcGroup,  0.0021 + rtcOx, rtcTopY + 0.0010, 0.0105, 0.0023, 0.0019, 0.0045, null, espTanCapMat, false);
-
-  // 5) U2 (DS1307Z) & U3 (24C32N) — Black SOIC-8 ICs with 8 shiny silver gull-wing legs each
-  const ds1307TopMat = new THREE.MeshStandardMaterial({ map: ds1307Tex, roughness: 0.34, metalness: 0.18 });
-  const at24c32TopMat = new THREE.MeshStandardMaterial({ map: at24c32Tex, roughness: 0.34, metalness: 0.18 });
-  for (const [ucx, topMat] of [[-0.0098 + rtcOx, ds1307TopMat], [0.0096 + rtcOx, at24c32TopMat]]) {
-    const ic = new THREE.Mesh(
-      new THREE.BoxGeometry(0.0088, 0.0028, 0.0078),
-      [smdDarkMat, smdDarkMat, topMat, smdDarkMat, smdDarkMat, smdDarkMat]
-    );
-    ic.position.set(ucx, rtcTopY + 0.0015, 0.0106);
-    ic.castShadow = true;
-    rtcGroup.add(ic);
-    for (let k = 0; k < 4; k++) {
-      const lx = ucx - 0.0031 + k * 0.0021;
-      for (const lz of [0.0052, 0.0160]) {
-        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.00085, 0.0009, 0.0025), brushedSteelMat);
-        leg.position.set(lx, rtcTopY + 0.0005, lz);
-        rtcGroup.add(leg);
-      }
-    }
-  }
-
-  // 6) Prominent Top-Mounted CR2032 3V Coin Cell Battery Holder + Engraved Silver Coin Cell + Rear-Rim Spring Clip
-  const coinX = 0.0242;
+  // Brushed Silver CR2032 3V Coin Cell seated flush inside the brown holder
   const coinTopMat = new THREE.MeshStandardMaterial({
     map: coinCellTopTex,
     roughness: 0.24,
     metalness: 0.78
   });
-  const coinHolderBase = new THREE.Mesh(new THREE.CylinderGeometry(0.0110, 0.0114, 0.0052, 26), matteRubberMat);
-  coinHolderBase.position.set(coinX, rtcTopY + 0.0026, 0.000);
-  coinHolderBase.castShadow = true;
-  // Side black plastic retention lugs characteristic of real CR2032 holders
-  for (const sz of [-0.0108, 0.0108]) {
-    const lug = new THREE.Mesh(new THREE.BoxGeometry(0.0068, 0.0058, 0.0022), dupontHousingMat);
-    lug.position.set(coinX, rtcTopY + 0.0029, sz);
-    rtcGroup.add(lug);
-  }
   const coinCellMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.0096, 0.0096, 0.0036, 28),
+    new THREE.CylinderGeometry(0.0142, 0.0142, 0.0042, 32),
     [brushedSteelMat, coinTopMat, brushedSteelMat]
   );
-  coinCellMesh.position.set(coinX, rtcTopY + 0.0055, 0.000);
+  coinCellMesh.position.set(holderCx, rtcTopY + 0.0039, holderCz);
   coinCellMesh.rotation.y = Math.PI / 2;
   coinCellMesh.castShadow = true;
-  // Slim stainless-steel positive retention tab gripping the rear rim so engraved CR2032 text stays 100% legible
-  const coinClipBar = new THREE.Mesh(new THREE.BoxGeometry(0.0042, 0.0009, 0.0056), brushedSteelMat);
-  coinClipBar.position.set(coinX, rtcTopY + 0.0077, -0.0084);
-  const coinClipLeg = new THREE.Mesh(new THREE.BoxGeometry(0.0044, 0.0078, 0.0013), brushedSteelMat);
-  coinClipLeg.position.set(coinX, rtcTopY + 0.0039, -0.0116);
-  rtcGroup.add(coinHolderBase, coinCellMesh, coinClipBar, coinClipLeg);
+  rtcGroup.add(coinCellMesh);
 
   hotspotAnchors.rtc = new THREE.Object3D();
-  hotspotAnchors.rtc.position.set(-0.004, 0.008, 0.048);
+  hotspotAnchors.rtc.position.set(0.002, 0.010, 0.044);
   rtcGroup.add(hotspotAnchors.rtc);
-  hotspotProxies.push(addHotspotProxy(rtcGroup, 'rtc', [0.088, 0.045, 0.068], [0.010, 0.014, 0]));
+  hotspotProxies.push(addHotspotProxy(rtcGroup, 'rtc', [0.064, 0.038, 0.062], [0.0, 0.012, 0.0]));
 
   // --- 6E. FIXED SIDE-ARM: BLACK SHADOW BAFFLE + 2x LM393 (4-PIN VCC/GND/DO/AO + CdS + DIFFUSER) ---
   const ldrGroup = new THREE.Group();
@@ -1926,7 +1898,7 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
 
   // 4 Corner mounting holes standoffs/screws + 4 domed silver battery-holder solder lugs on PCB face!
   for (const [bx, bz] of [[-0.0472, -0.0212], [0.0472, -0.0212], [-0.0472, 0.0212], [0.0472, 0.0212]]) {
-    pushInst(boltMats, BOARD_ORIGINS.ups.x + bx, BOARD_ORIGINS.ups.y + upsTopY + 0.0011, BOARD_ORIGINS.ups.z + bz, 0, 0, 0, 0.72, 0.65, 0.72);
+    pushInst(boltMats, BOARD_ORIGINS.ups.x + bx, BOARD_ORIGINS.ups.y + upsTopY + 0.0011, BOARD_ORIGINS.ups.z + bz, 0, 0, 0, 0.72, 0.65, 0.72, 4);
   }
   for (const [lx, lz] of [[-0.0410, -0.0135], [-0.0410, 0.0135], [0.0410, -0.0135], [0.0410, 0.0135]]) {
     const lug = new THREE.Mesh(new THREE.SphereGeometry(0.0020, 12, 10), brushedSteelMat);
@@ -2384,13 +2356,13 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   }
 
   // ==========================================================================
-  // 9. CLICKABLE 3D WIRING HARNESS (24 Exact Pin-to-Pin Wires + Hit Proxies!)
+  // 9. CLICKABLE 3D WIRING HARNESS (All Stage-Tagged Pin-to-Pin Wires + Hit Proxies!)
   // ==========================================================================
   const cablesGroup = new THREE.Group();
   cablesGroup.name = 'WiringHarnessGroup';
   root.add(cablesGroup);
 
-  const wireSpecs = buildPinAccurateWireSpecs();
+  const wireSpecs = buildAllStageWireSpecs();
   const wireById = new Map();
   for (const spec of wireSpecs) {
     const entry = makeCableEntry(spec);
@@ -2408,7 +2380,7 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   pinHitGroup.name = 'ClickablePinHitGroup';
   root.add(pinHitGroup);
 
-  const pinRegistry = buildClickablePinRegistry();
+  const pinRegistry = buildClickablePinRegistry(FULL_BUILD_STAGE);
   const pinById = new Map();
   const pinHitMat = new THREE.MeshBasicMaterial({ visible: false });
   const pinGeoSmall = new THREE.SphereGeometry(0.0068, 8, 8);
@@ -2419,7 +2391,9 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     const proxy = new THREE.Mesh(isLarge ? pinGeoLarge : pinGeoSmall, pinHitMat);
     proxy.position.set(pin.pos[0], pin.pos[1], pin.pos[2]);
     proxy.layers.set(PIN_HIT_LAYER);
+    proxy.userData.basePin = pin;
     proxy.userData.pinData = pin;
+    proxy.userData.stageVisible = true;
     pinHitGroup.add(proxy);
     pinHitProxies.push(proxy);
     pinById.set(pin.id, pin);
@@ -2456,18 +2430,38 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   let stateSelectedWireIds = null; // Set<string> | null
   let stateHoveredWireId = null;
 
+  let lastDimKey = '';
+
   function applyWireVisualState() {
     const hasSpecificWires = !!(stateSelectedWireIds && stateSelectedWireIds.size > 0);
     const dimStruct = stateWiringHighlight || hasSpecificWires;
-
-    for (const s of structuralMats) {
-      s.mat.transparent = dimStruct ? true : s.origTransparent;
-      s.mat.opacity = dimStruct ? (hasSpecificWires ? 0.34 : (stateFocusCategory ? 0.24 : 0.32)) : s.origOpacity;
-      s.mat.depthWrite = !dimStruct;
-      s.mat.needsUpdate = true;
+    const dimOpacity = dimStruct ? (hasSpecificWires ? 0.34 : (stateFocusCategory ? 0.24 : 0.32)) : -1;
+    const dimKey = `${dimStruct ? 1 : 0}|${dimOpacity}`;
+    if (dimKey !== lastDimKey) {
+      lastDimKey = dimKey;
+      for (const s of structuralMats) {
+        const nextTrans = dimStruct ? true : s.origTransparent;
+        const nextOpacity = dimStruct ? dimOpacity : s.origOpacity;
+        const nextDepthWrite = !dimStruct;
+        const transChanged = s.mat.transparent !== nextTrans;
+        if (transChanged || s.mat.opacity !== nextOpacity || s.mat.depthWrite !== nextDepthWrite) {
+          s.mat.transparent = nextTrans;
+          s.mat.opacity = nextOpacity;
+          s.mat.depthWrite = nextDepthWrite;
+          if (transChanged) s.mat.needsUpdate = true;
+        }
+      }
     }
 
     for (const w of wireEntries) {
+      if (!w.stageActive) {
+        w.mesh.visible = false;
+        w.hitMesh.visible = false;
+        continue;
+      }
+      w.mesh.visible = true;
+      w.hitMesh.visible = true;
+      const prevTransparent = w.mat.transparent;
       const isHovered = stateHoveredWireId === w.id;
       if (hasSpecificWires) {
         if (stateSelectedWireIds.has(w.id)) {
@@ -2524,7 +2518,9 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
           w.mat.opacity = 1;
         }
       }
-      w.mat.needsUpdate = true;
+      if (w.mat.transparent !== prevTransparent) {
+        w.mat.needsUpdate = true;
+      }
     }
   }
 
@@ -2637,7 +2633,65 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     wattDisplay.update(elec, dtSec);
   }
 
+  let currentBuildStage = FULL_BUILD_STAGE;
+
+  function setBuildStage(stage) {
+    const s = clampBuildStage(stage);
+    currentBuildStage = s;
+
+    xlGroup.visible = s >= 2;
+    inaGroup.visible = s >= 3;
+    upsGroup.visible = s >= 4;
+    swGroup.visible = s >= 5;
+
+    for (const inst of batches) {
+      if (!inst) continue;
+      const entries = inst.userData.stageEntries || [];
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        const active = isStageRangeActive(s, e.minStage, e.maxStage);
+        inst.setMatrixAt(i, active ? e.matrix : _zeroScaleMatrix);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+    }
+
+    for (const w of wireEntries) {
+      const active = isStageRangeActive(s, w.minStage, w.maxStage);
+      w.stageActive = active;
+      w.mesh.visible = active;
+      w.hitMesh.visible = active;
+      w.mesh.userData.stageVisible = active;
+      w.hitMesh.userData.stageVisible = active;
+      if (!active) {
+        if (stateSelectedWireIds) stateSelectedWireIds.delete(w.id);
+        if (stateHoveredWireId === w.id) stateHoveredWireId = null;
+      }
+    }
+
+    pinById.clear();
+    for (const proxy of pinHitProxies) {
+      const basePin = proxy.userData.basePin;
+      const resolved = resolvePinForStage(basePin, s);
+      proxy.userData.pinData = resolved;
+      proxy.userData.stageVisible = !!resolved.stageVisible;
+      proxy.visible = !!resolved.stageVisible;
+      if (resolved.stageVisible) {
+        pinById.set(resolved.id, resolved);
+      }
+    }
+
+    for (const hp of hotspotProxies) {
+      const vis = s >= (hp.userData.minStage ?? 1);
+      hp.visible = vis;
+      hp.userData.stageVisible = vis;
+    }
+
+    applyWireVisualState();
+    return s;
+  }
+
   updateMechanics(0, 0);
+  setBuildStage(FULL_BUILD_STAGE);
 
   return {
     root,
@@ -2654,6 +2708,8 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     updateMechanics,
     updateTelemetryVisuals,
     setUpsSwitchState,
+    setBuildStage,
+    getBuildStage: () => currentBuildStage,
     setWiringHighlight,
     setSelectionHighlight,
     setHoverPreview,

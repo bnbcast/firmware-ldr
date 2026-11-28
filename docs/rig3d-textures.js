@@ -1429,95 +1429,134 @@ export function createUsbCTopTexture(anisotropy) {
 }
 
 /**
- * Brushed nickel-silver top texture for CR2032 3V Lithium Coin Cell Battery on Tiny RTC.
+ * Brushed nickel-silver top texture for CR2032 3V Lithium Coin Cell Battery on Tiny RTC
+ * matching the user's uploaded photo ('+', 'CR2032', 'リチウムバッテリー', 'LITHIUM BATTERY', '3V').
  */
 export function createCoinCellTopTexture(anisotropy) {
-  const s = 256;
+  const s = 512;
   const c = document.createElement('canvas');
   c.width = s;
   c.height = s;
   const ctx = c.getContext('2d');
 
-  // Metallic radial sheen
-  const g = ctx.createRadialGradient(s * 0.42, s * 0.38, 12, s * 0.5, s * 0.5, s * 0.52);
+  // Metallic radial sheen with fine circular machined steel finish
+  const g = ctx.createRadialGradient(s * 0.42, s * 0.36, 18, s * 0.5, s * 0.5, s * 0.52);
   g.addColorStop(0, '#f8fafc');
-  g.addColorStop(0.55, '#d5dde7');
-  g.addColorStop(0.85, '#b6c1cf');
+  g.addColorStop(0.50, '#d8e0ea');
+  g.addColorStop(0.84, '#b8c3d1');
   g.addColorStop(1, '#8c99aa');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, s, s);
 
-  // Subtle concentric brushed-steel rings
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)';
   ctx.lineWidth = 2;
-  for (let r = 24; r < 118; r += 14) {
+  for (let r = 34; r < 236; r += 12) {
     ctx.beginPath();
     ctx.arc(s * 0.5, s * 0.5, r, 0, Math.PI * 2);
     ctx.stroke();
   }
 
+  // Subtle brushed surface speckles
+  for (let i = 0; i < 420; i++) {
+    const a = (i * 137.5) % 360;
+    const rr = 30 + ((i * 53) % 190);
+    const x = s * 0.5 + Math.cos(a) * rr;
+    const y = s * 0.5 + Math.sin(a) * rr;
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.16)' : 'rgba(51,65,85,0.08)';
+    ctx.fillRect(x, y, 3, 1.5);
+  }
+
   // Outer crimped metal bevel ring
   ctx.strokeStyle = '#64748b';
-  ctx.lineWidth = 6;
+  ctx.lineWidth = 10;
   ctx.beginPath();
-  ctx.arc(s * 0.5, s * 0.5, 114, 0, Math.PI * 2);
+  ctx.arc(s * 0.5, s * 0.5, 236, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Crisp laser-etched battery markings: '+', 'CR2032', '3V LITHIUM'
+  // Crisp laser-etched markings matching uploaded photo
   ctx.fillStyle = '#334155';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = '800 44px Inter, sans-serif';
-  ctx.fillText('+', s * 0.5, 62);
-  ctx.font = '800 32px "JetBrains Mono", monospace';
-  ctx.fillText('CR2032', s * 0.5, 122);
-  ctx.font = '700 18px "JetBrains Mono", monospace';
-  ctx.fillStyle = '#475569';
-  ctx.fillText('3V LITHIUM', s * 0.5, 162);
-  ctx.font = '700 14px Inter, sans-serif';
-  ctx.fillText('LIR2032 / RTC', s * 0.5, 192);
+  ctx.font = '700 80px Inter, sans-serif';
+  ctx.fillText('+', s * 0.5, 134);
+  ctx.font = '800 52px "JetBrains Mono", monospace';
+  ctx.fillText('CR2032', s * 0.5, 206);
+  ctx.font = '700 26px Inter, sans-serif';
+  ctx.fillStyle = '#3f4c5e';
+  ctx.fillText('リチウムバッテリー', s * 0.5, 264);
+  ctx.font = '700 30px "JetBrains Mono", monospace';
+  ctx.fillText('LITHIUM BATTERY', s * 0.5, 318);
+  ctx.font = '800 40px "JetBrains Mono", monospace';
+  ctx.fillText('3V', s * 0.5, 378);
 
   return finalizeColorTex(c, anisotropy);
 }
 
 /**
- * 1280x960 Photorealistic Deep-Blue HW-111 Tiny RTC DS1307 + AT24C32 PCB silkscreen
- * (0.076m wide x 0.056m deep, PCB localX spans -0.028 .. +0.048):
- *  - Left edge (P2, localX = -0.023): 7-pin header pads SQ..BAT aligned 1:1 with getTinyRtcPinPos(0..6)
- *  - Left-center (localX = -0.017 .. +0.012): Full HW-111 SMD circuitry (HW-111, X1, D1, R6/R4/R5/R8/R1/R3/R2, C1/C2, U2 DS1307, U3 24C32)
- *  - Right-center (localX = +0.0265): Top-mounted CR2032 Coin Cell Battery cradle footprint (BT1 3V +)
- *  - Far-right edge (P1, localX = +0.0435): 7 open silver-ring solder pads SQ..BAT + 'I2C modules' + 'P1'
+ * 1024x1024 Photorealistic Square Royal-Blue Tiny RTC I2C Module PCB
+ * matching the user's exact uploaded photo (0.056m wide x 0.054m deep, centered at localX = 0):
+ *  - Left edge (P2, localX = -0.023): 7 plated holes (6 round + 1 square BAT pad at +Z) aligned 1:1 with getTinyRtcPinPos(0..6)
+ *  - Right edge (P1, localX = +0.023): 5 open silver-ring solder pads (4 round + 1 square pad at +Z)
+ *  - Rear-right (+X, -Z): white semicircle silkscreen + 'U1' + 3 unpopulated DS18B20 pads
+ *  - Front (+Z) corners: 2 large silver-ring mounting holes
+ *  - Center: crosshatch copper pour mesh + copper traces + CR2032 holder silkscreen footprint
  */
 export function createTinyRtcTexture(anisotropy) {
-  const w = 1280;
-  const h = 960;
+  const w = 1024;
+  const h = 1024;
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
   const ctx = c.getContext('2d');
 
-  // Deep glossy dark-blue soldermask matching HW-111 photo
+  // Glossy royal-blue soldermask matching uploaded photo
   const bg = ctx.createLinearGradient(0, 0, w, h);
-  bg.addColorStop(0, '#0a487a');
-  bg.addColorStop(0.5, '#083d6a');
-  bg.addColorStop(1, '#063259');
+  bg.addColorStop(0, '#0c5da1');
+  bg.addColorStop(0.5, '#094e8a');
+  bg.addColorStop(1, '#074074');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
 
-  // Subtle etched copper ground-pour frame
-  ctx.strokeStyle = 'rgba(30, 118, 184, 0.35)';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(18, 18, w - 36, h - 36);
+  // Fine crosshatch copper-pour dot-grid texture characteristic of this Tiny RTC PCB
+  ctx.fillStyle = 'rgba(24, 134, 212, 0.30)';
+  const step = 18;
+  for (let gx = 24; gx < w - 24; gx += step) {
+    for (let gy = 24; gy < h - 24; gy += step) {
+      ctx.fillRect(gx, gy, 9, 9);
+    }
+  }
 
-  // Coordinate helpers matching 0.076m x 0.056m PCB centered at rtcGroup localX = +0.010 (spans -0.028 .. +0.048)
-  const pcbCenterX = 0.010;
-  const pcbW = 0.076;
-  const pcbD = 0.056;
-  const pxX = (xm) => ((xm - pcbCenterX) / pcbW + 0.5) * w;
+  // Subtle darker soldermask perimeter border
+  ctx.strokeStyle = 'rgba(7, 56, 102, 0.9)';
+  ctx.lineWidth = 10;
+  ctx.strokeRect(5, 5, w - 10, h - 10);
+
+  const pcbW = 0.056;
+  const pcbD = 0.058;
+  const pxX = (xm) => (xm / pcbW + 0.5) * w;
   const pyZ = (zm) => (zm / pcbD + 0.5) * h;
 
+  // Etched bright-blue copper traces visible under the soldermask
+  ctx.strokeStyle = 'rgba(34, 150, 224, 0.58)';
+  ctx.lineWidth = 10;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const drawTrace = (pts) => {
+    ctx.beginPath();
+    pts.forEach(([xm, zm], idx) => {
+      if (idx === 0) ctx.moveTo(pxX(xm), pyZ(zm));
+      else ctx.lineTo(pxX(xm), pyZ(zm));
+    });
+    ctx.stroke();
+  };
+  drawTrace([[-0.023, -0.0124], [-0.014, -0.0124], [-0.008, -0.006], [0.015, -0.006], [0.023, -0.0062]]);
+  drawTrace([[-0.023, -0.0062], [-0.015, -0.0062], [-0.010,  0.000], [0.016,  0.000], [0.023,  0.0000]]);
+  drawTrace([[-0.023,  0.0000], [-0.016,  0.0000], [-0.011,  0.006], [0.015,  0.006], [0.023,  0.0062]]);
+  drawTrace([[-0.023,  0.0062], [-0.015,  0.0062], [-0.010,  0.012], [0.015,  0.012], [0.023,  0.0124]]);
+  drawTrace([[ 0.016, -0.0220], [ 0.016, -0.014], [ 0.023, -0.0124]]);
+
   const drawPlatedHole = (cx, cy, rOuter, rInner, square = false) => {
-    ctx.fillStyle = '#dce3ec';
+    ctx.fillStyle = '#dde5ee';
     if (square) {
       ctx.fillRect(cx - rOuter, cy - rOuter, rOuter * 2, rOuter * 2);
     } else {
@@ -1527,152 +1566,48 @@ export function createTinyRtcTexture(anisotropy) {
     }
     ctx.beginPath();
     ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
-    ctx.fillStyle = '#091b2e';
+    ctx.fillStyle = '#0c1c2e';
     ctx.fill();
   };
 
-  // 2 Bottom Corner Plated Mounting Holes
-  drawPlatedHole(pxX(-0.0225), pyZ(0.0228), 32, 21);
-  drawPlatedHole(pxX(0.0422),  pyZ(0.0228), 32, 21);
+  // 2 Large Silver-Plated Corner Mounting Holes on Front (+Z) Edge cleanly outside P2/P1 pins
+  drawPlatedHole(pxX(-0.0218), pyZ(0.0246), 38, 25);
+  drawPlatedHole(pxX(0.0218),  pyZ(0.0246), 38, 25);
 
-  // Top-left 3x unpopulated DS18B20 vertical silver pads
+  // Rear-Right (+X, -Z) Unpopulated DS18B20 Footprint: white semicircle + 'U1' + 3 silver pads
+  ctx.strokeStyle = '#f8fafc';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(pxX(0.0185), pyZ(-0.0280), 92, 0, Math.PI);
+  ctx.stroke();
   for (let k = 0; k < 3; k++) {
-    drawPlatedHole(pxX(-0.0218), pyZ(-0.0238 + k * 0.0042), 13, 6);
+    drawPlatedHole(pxX(0.0145 + k * 0.0040), pyZ(-0.0232), 20, 10);
   }
-
-  // Top-center & Bottom-center vias
-  ctx.strokeStyle = 'rgba(241, 245, 249, 0.85)';
-  ctx.lineWidth = 3.5;
-  ctx.strokeRect(pxX(-0.0032), pyZ(-0.0242), 46, 46);
-  drawPlatedHole(pxX(-0.0012), pyZ(-0.0215), 15, 7);
-  drawPlatedHole(pxX(-0.0015), pyZ(0.0195), 18, 9);
-
-  // Top Edge Crisp White Silkscreen: 'HW-111' & 'I2C modules'
   ctx.fillStyle = '#f8fafc';
+  ctx.font = '800 30px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  ctx.font = '800 32px "JetBrains Mono", monospace';
-  ctx.fillText('HW-111', pxX(-0.0175), pyZ(-0.0242));
-  ctx.textAlign = 'right';
-  ctx.font = '700 32px Inter, sans-serif';
-  ctx.fillText('I2C modules', pxX(0.0458), pyZ(-0.0242));
+  ctx.fillText('U1', pxX(0.0145), pyZ(-0.0150));
 
-  // Left edge (P2, localX = -0.023): 7 header pads aligned 1:1 with getTinyRtcPinPos(0..6)!
-  ctx.strokeStyle = 'rgba(241, 245, 249, 0.82)';
-  ctx.lineWidth = 3.5;
-  ctx.strokeRect(pxX(-0.0258), pyZ(-0.0214), pxX(-0.0202) - pxX(-0.0258), pyZ(0.0214) - pyZ(-0.0214));
+  // Left Edge (P2, localX = -0.023): 7 plated holes aligned 1:1 with getTinyRtcPinPos(0..6)
   for (let i = 0; i < 7; i++) {
     const zm = (i - 3) * 0.0062;
-    const py = pyZ(zm);
-    const px = pxX(-0.0230);
-    drawPlatedHole(px, py, 14, 6, i === 6);
-
-    const pinLbl = TINY_RTC_PINS[i];
-    const used = i >= 2 && i <= 5;
-    ctx.fillStyle = used ? '#fef08a' : '#f1f5f9';
-    ctx.font = used ? '800 20px "JetBrains Mono", monospace' : '700 18px "JetBrains Mono", monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(pinLbl, px + 20, py);
+    drawPlatedHole(pxX(-0.0230), pyZ(zm), 21, 10, i === 6);
   }
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = '800 22px "JetBrains Mono", monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('P2', pxX(-0.0226), pyZ(0.0256));
 
-  // Right edge (P1, localX = +0.0435): 7 open silver-ring solder pads inside white silkscreen frame
-  ctx.strokeStyle = '#f8fafc';
-  ctx.lineWidth = 3.5;
-  ctx.strokeRect(pxX(0.0406), pyZ(-0.0195), pxX(0.0466) - pxX(0.0406), pyZ(0.0198) - pyZ(-0.0195));
-  for (let i = 0; i < 7; i++) {
-    const zm = -0.0165 + i * 0.0055;
-    const py = pyZ(zm);
-    const px = pxX(0.0436);
-    drawPlatedHole(px, py, 14, 7, i === 6);
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = '700 20px "JetBrains Mono", monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(TINY_RTC_PINS[i], pxX(0.0396), py);
+  // Right Edge (P1, localX = +0.023): 5 open silver-ring solder pads (4 round + 1 square pad at +Z)
+  for (let i = 0; i < 5; i++) {
+    const zm = -0.0124 + i * 0.0062;
+    drawPlatedHole(pxX(0.0230), pyZ(zm), 21, 10, i === 4);
   }
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = '800 22px "JetBrains Mono", monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('P1', pxX(0.0362), pyZ(0.0252));
 
-  // CR2032 Coin Cell Battery Holder silkscreen outline at localX = +0.0258, z = 0.000
-  ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
-  ctx.lineWidth = 3.5;
+  // White silkscreen outline under the rear (-Z) brass battery clip & CR2032 footprint
+  ctx.strokeStyle = 'rgba(248, 250, 252, 0.9)';
+  ctx.lineWidth = 4.5;
+  ctx.strokeRect(pxX(-0.0065), pyZ(-0.0235), pxX(0.0065) - pxX(-0.0065), pyZ(-0.0150) - pyZ(-0.0235));
   ctx.beginPath();
-  ctx.arc(pxX(0.0258), pyZ(0.000), 192, 0, Math.PI * 2);
+  ctx.arc(pxX(0.000), pyZ(-0.0005), 260, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = '#fef08a';
-  ctx.font = '800 22px "JetBrains Mono", monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('BT1 · CR2032 3V', pxX(0.0258), pyZ(-0.0175));
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = '800 24px "JetBrains Mono", monospace';
-  ctx.fillText('+', pxX(0.0258), pyZ(0.0180));
-
-  // Crisp White SMD Silkscreen Component Outlines & Reference Designators (shifted -0.002m in X cleanly beside CR2032)
-  const ox = -0.0020;
-  const box = (x1, z1, x2, z2) => {
-    ctx.strokeStyle = 'rgba(248, 250, 252, 0.88)';
-    ctx.lineWidth = 3.2;
-    ctx.strokeRect(pxX(x1 + ox), pyZ(z1), pxX(x2 + ox) - pxX(x1 + ox), pyZ(z2) - pyZ(z1));
-  };
-
-  box(-0.0114, -0.0192, -0.0056, -0.0010); // X1
-  box(0.0038, -0.0195, 0.0146, -0.0138);   // D1
-  box(-0.0018, -0.0180, 0.0026, -0.0102);  // R6
-  box(-0.0018, -0.0076, 0.0026,  0.0002);  // R4
-  box(0.0044, -0.0132, 0.0142, -0.0086);   // R5
-  box(0.0044, -0.0076, 0.0142, -0.0030);   // R8
-  box(0.0044, -0.0020, 0.0142,  0.0026);   // R1
-  box(-0.0156, -0.0062, -0.0124, 0.0004);  // R7
-  box(-0.0038,  0.0064, -0.0004, 0.0146);  // C1
-  box( 0.0004,  0.0064,  0.0038, 0.0146);  // C2
-  box(-0.0144,  0.0200, -0.0062, 0.0246);  // R3
-  box( 0.0048,  0.0200,  0.0132, 0.0246);  // R2
-
-  // Metallic pads for U2 (DS1307) & U3 (AT24C32)
-  ctx.fillStyle = '#cfd8e3';
-  for (const ucx of [-0.0098 + ox, 0.0096 + ox]) {
-    for (let k = 0; k < 4; k++) {
-      const px = pxX(ucx - 0.0031 + k * 0.0021);
-      ctx.fillRect(px - 5, pyZ(0.0044) - 7, 10, 14);
-      ctx.fillRect(px - 5, pyZ(0.0168) - 7, 10, 14);
-    }
-  }
-
-  // Reference designators
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = '800 21px "JetBrains Mono", monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('D1', pxX(0.0118 + ox), pyZ(-0.0208));
-  ctx.fillText('R7', pxX(-0.0136 + ox), pyZ(-0.0078));
-  ctx.fillText('C1', pxX(-0.0022 + ox), pyZ(0.0042));
-  ctx.fillText('C2', pxX(0.0022 + ox),  pyZ(0.0042));
-
-  const drawRotText = (txt, xm, zm, deg) => {
-    ctx.save();
-    ctx.translate(pxX(xm + ox), pyZ(zm));
-    ctx.rotate((deg * Math.PI) / 180);
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = '800 20px "JetBrains Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(txt, 0, 0);
-    ctx.restore();
-  };
-  drawRotText('X1', -0.0130, -0.0130, 90);
-  drawRotText('R6', -0.0034, -0.0142, 90);
-  drawRotText('R4', -0.0034, -0.0038, 90);
-  drawRotText('R5',  0.0034, -0.0108, 90);
-  drawRotText('R8',  0.0034, -0.0052, 90);
-  drawRotText('R1',  0.0034,  0.0004, 90);
-  drawRotText('U2', -0.0048,  0.0192, 90);
-  drawRotText('U3',  0.0148,  0.0192, 90);
-  drawRotText('R3', -0.0046,  0.0226, 90);
-  drawRotText('R2',  0.0148,  0.0226, 90);
 
   return finalizeColorTex(c, anisotropy);
 }

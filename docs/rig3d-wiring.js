@@ -7,6 +7,13 @@
  * unit-tested via node:test and shared by rig3d-model.js and rig3d.js.
  */
 
+import {
+  FULL_BUILD_STAGE,
+  clampBuildStage,
+  isStageRangeActive,
+  isWireNetVisibleAtStage
+} from './rig3d-stages.js';
+
 export const RIG_DIMS = {
   postHeight: 1.58,
   pivotPos: { x: 0, y: 1.58, z: 0 },
@@ -352,56 +359,56 @@ export const SERVO_PLUG_PINS = {
 export const ACTIVE_DUPONT_PLUGS = {
   goouuu: [
     // Front (+Z): LDR1 (P34 S/V/G), LDR2 (P35 S/V/G), dan Common GND -> Breadboard!
-    { side: 'front', index: 4, row: 'S', label: 'GPIO34 (LDR1 AO)', wireColor: 0xfacc15 },
-    { side: 'front', index: 4, row: 'V', label: '3.3V (LDR1 VCC)',  wireColor: 0xef4444 },
-    { side: 'front', index: 4, row: 'G', label: 'GND (LDR1 GND)',   wireColor: 0x1e2229 },
-    { side: 'front', index: 5, row: 'S', label: 'GPIO35 (LDR2 AO)', wireColor: 0xa855f7 },
-    { side: 'front', index: 5, row: 'V', label: '3.3V (LDR2 VCC)',  wireColor: 0xef4444 },
-    { side: 'front', index: 5, row: 'G', label: 'GND (LDR2 GND)',   wireColor: 0x1e2229 },
-    { side: 'front', index: 0, row: 'G', label: 'ESP32 GND → Common GND', wireColor: 0x1e2229 },
+    { side: 'front', index: 4, row: 'S', label: 'GPIO34 (LDR1 AO)', wireColor: 0xfacc15, minStage: 1 },
+    { side: 'front', index: 4, row: 'V', label: '3.3V (LDR1 VCC)',  wireColor: 0xef4444, minStage: 1 },
+    { side: 'front', index: 4, row: 'G', label: 'GND (LDR1 GND)',   wireColor: 0x1e2229, minStage: 1 },
+    { side: 'front', index: 5, row: 'S', label: 'GPIO35 (LDR2 AO)', wireColor: 0xa855f7, minStage: 1 },
+    { side: 'front', index: 5, row: 'V', label: '3.3V (LDR2 VCC)',  wireColor: 0xef4444, minStage: 1 },
+    { side: 'front', index: 5, row: 'G', label: 'GND (LDR2 GND)',   wireColor: 0x1e2229, minStage: 1 },
+    { side: 'front', index: 0, row: 'G', label: 'ESP32 GND → Common GND', wireColor: 0x1e2229, minStage: 2 },
     // Rear (-Z): Tiny RTC I2C (SCL 22, SDA 21, 3.3V, GND) & Servo PWM (GPIO18)
-    { side: 'rear',  index: 2, row: 'S', label: 'GPIO22 (RTC SCL)', wireColor: 0x0ea5e9 },
-    { side: 'rear',  index: 5, row: 'S', label: 'GPIO21 (RTC SDA)', wireColor: 0x10b981 },
-    { side: 'rear',  index: 5, row: 'V', label: '3.3V (RTC VCC)',   wireColor: 0xef4444 },
-    { side: 'rear',  index: 5, row: 'G', label: 'GND (RTC GND)',    wireColor: 0x1e2229 },
-    { side: 'rear',  index: 8, row: 'S', label: 'GPIO18 (Servo PWM)', wireColor: 0xf97316 }
+    { side: 'rear',  index: 2, row: 'S', label: 'GPIO22 (RTC SCL)', wireColor: 0x0ea5e9, minStage: 1 },
+    { side: 'rear',  index: 5, row: 'S', label: 'GPIO21 (RTC SDA)', wireColor: 0x10b981, minStage: 1 },
+    { side: 'rear',  index: 5, row: 'V', label: '3.3V (RTC VCC)',   wireColor: 0xef4444, minStage: 1 },
+    { side: 'rear',  index: 5, row: 'G', label: 'GND (RTC GND)',    wireColor: 0x1e2229, minStage: 1 },
+    { side: 'rear',  index: 8, row: 'S', label: 'GPIO18 (Servo PWM)', wireColor: 0xf97316, minStage: 2 }
   ],
   goouuuAux: [
-    { pinName: 'D22', label: 'D22 (INA219 SCL)' },
-    { pinName: 'D21', label: 'D21 (INA219 SDA)' },
-    { pinName: 'VCC', label: 'VCC 3.3V (INA219 VCC)' }
+    { pinName: 'D22', label: 'D22 (INA219 SCL)', minStage: 3 },
+    { pinName: 'D21', label: 'D21 (INA219 SDA)', minStage: 3 },
+    { pinName: 'VCC', label: 'VCC 3.3V (INA219 VCC)', minStage: 3 }
   ],
   goouuuPwr: [
-    { pinName: '5V',  label: '5V ← UPS+ (QF-M6001-2 5V)' },
-    { pinName: 'GND', label: 'GND ← UPS− (QF-M6001-2)' }
+    { pinName: '5V',  label: '5V ← UPS+ (QF-M6001-2 5V)', minStage: 4 },
+    { pinName: 'GND', label: 'GND ← UPS− (QF-M6001-2)', minStage: 4 }
   ],
   breadboard: [
-    { slot: 0, label: 'Common GND ← XL4015 OUT−' },
-    { slot: 1, label: 'Common GND ← Servo MG996R (Cokelat)' },
-    { slot: 2, label: 'Common GND ← ESP32 GND' },
-    { slot: 3, label: 'Common GND ← INA219 GND' }
+    { slot: 0, label: 'Common GND ← XL4015 OUT−', minStage: 2 },
+    { slot: 1, label: 'Common GND ← Servo MG996R (Cokelat)', minStage: 2 },
+    { slot: 2, label: 'Common GND ← ESP32 GND', minStage: 2 },
+    { slot: 3, label: 'Common GND ← INA219 GND', minStage: 3 }
   ],
   ina219: [
-    { index: 0, label: 'VCC → ESP32 3.3V (Aux)' },
-    { index: 1, label: 'GND → Breadboard Common GND' },
-    { index: 2, label: 'SCL → ESP32 GPIO22 (D22)' },
-    { index: 3, label: 'SDA → ESP32 GPIO21 (D21)' }
+    { index: 0, label: 'VCC → ESP32 3.3V (Aux)', minStage: 3 },
+    { index: 1, label: 'GND → Breadboard Common GND', minStage: 3 },
+    { index: 2, label: 'SCL → ESP32 GPIO22 (D22)', minStage: 3 },
+    { index: 3, label: 'SDA → ESP32 GPIO21 (D21)', minStage: 3 }
   ],
   rtc: [
-    { index: 2, label: 'SCL → ESP32 GPIO22' },
-    { index: 3, label: 'SDA → ESP32 GPIO21' },
-    { index: 4, label: 'VCC → ESP32 3.3V' },
-    { index: 5, label: 'GND → ESP32 GND' }
+    { index: 2, label: 'SCL → ESP32 GPIO22', minStage: 1 },
+    { index: 3, label: 'SDA → ESP32 GPIO21', minStage: 1 },
+    { index: 4, label: 'VCC → ESP32 3.3V', minStage: 1 },
+    { index: 5, label: 'GND → ESP32 GND', minStage: 1 }
   ],
   ldr1: [
-    { index: 0, label: 'VCC → ESP32 3.3V' },
-    { index: 1, label: 'GND → ESP32 GND' },
-    { index: 3, label: 'AO → ESP32 GPIO34' }
+    { index: 0, label: 'VCC → ESP32 3.3V', minStage: 1 },
+    { index: 1, label: 'GND → ESP32 GND', minStage: 1 },
+    { index: 3, label: 'AO → ESP32 GPIO34', minStage: 1 }
   ],
   ldr2: [
-    { index: 0, label: 'VCC → ESP32 3.3V' },
-    { index: 1, label: 'GND → ESP32 GND' },
-    { index: 3, label: 'AO → ESP32 GPIO35' }
+    { index: 0, label: 'VCC → ESP32 3.3V', minStage: 1 },
+    { index: 1, label: 'GND → ESP32 GND', minStage: 1 },
+    { index: 3, label: 'AO → ESP32 GPIO35', minStage: 1 }
   ]
 };
 
@@ -478,11 +485,50 @@ export const WIRE_NET_META = {
   }
 };
 
+export function getWireNetMetaForStage(netKey, stage = FULL_BUILD_STAGE) {
+  const base = WIRE_NET_META[netKey];
+  if (!base) return null;
+  const s = clampBuildStage(stage);
+  if (netKey === 'buck12v' && s < 3) {
+    return {
+      ...base,
+      label: 'SCC LOAD 12V → XL4015',
+      summary: 'Tahap sebelum INA219: terminal LOAD+ & LOAD− SCC masuk langsung ke XL4015 IN+ & IN− (12V DC).',
+      pins: 'SCC LOAD+ → XL4015 IN+  |  SCC LOAD− → XL4015 IN−'
+    };
+  }
+  if (netKey === 'gnd' && s < 3) {
+    return {
+      ...base,
+      label: 'Common GND (3 Kabel)',
+      summary: 'Menyatukan 3 jalur Common GND sebelum INA219 dipasang: XL4015 OUT−, kabel cokelat Servo MG996R (sebaiknya langsung ke titik distribusi GND), dan ESP32 GND.',
+      pins: 'XL4015 OUT− + Servo Cokelat + ESP32 GND → Breadboard Common GND'
+    };
+  }
+  if (netKey === 'i2c' && s < 3) {
+    return {
+      ...base,
+      label: 'Bus I2C (Tiny RTC ↔ ESP32)',
+      summary: 'Tiny RTC (0x68/0x50) terhubung ke bus I2C ESP32 pada GPIO21 (SDA), GPIO22 (SCL), 3.3V, dan GND (INA219 belum terpasang).',
+      pins: 'Tiny RTC SDA/SCL/VCC/GND → ESP32 GPIO21 / GPIO22 / 3.3V / GND'
+    };
+  }
+  if (netKey === 'usb' && s === 4) {
+    return {
+      ...base,
+      label: 'UPS 5V → ESP32 (Tanpa Switch)',
+      summary: 'Adaptor USB-C 5V masuk ke UPS QF-M6001-2, lalu output UPS+ disambung langsung ke GOOUUU V4 5V & UPS− ke GND (Switch 5V belum dipasang).',
+      pins: 'USB-C 5V IN → QF-M6001-2 → UPS+ → GOOUUU 5V · UPS− → GND'
+    };
+  }
+  return base;
+}
+
 /**
- * Generates all 25 exact pin-to-pin 3D cable splines with full from/to metadata
- * so every single wire is clickable and self-documenting!
+ * Generates ALL stage-tagged pin-to-pin 3D cable splines (32 final-rig wires +
+ * 2 pre-module direct bypass jumpers for c2 XL4015-only and c4 UPS-only).
  */
-export function buildPinAccurateWireSpecs() {
+export function buildAllStageWireSpecs() {
   const esp34S = getGoouuuPinPos('front', 4, 'S').world;
   const esp34V = getGoouuuPinPos('front', 4, 'V').world;
   const esp34G = getGoouuuPinPos('front', 4, 'G').world;
@@ -689,9 +735,34 @@ export function buildPinAccurateWireSpecs() {
       ]
     },
 
-    // --- C. 12V BUCK INPUT VIA INA219 SHUNT: SCC LOAD+ -> INA219 VIN+ -> INA219 VIN- -> XL4015 IN+ ---
+    // --- C. 12V BUCK INPUT: DIRECT AT c2 (BEFORE INA219), VIA INA219 SHUNT AT c3+ ---
+    {
+      id: 'scc-xl-load-pos',
+      minStage: 2,
+      maxStage: 2,
+      fromPin: 'SCC LOAD+ (12V)',
+      toPin: 'XL4015 IN+',
+      fromPinId: 'scc-load-p',
+      toPinId: 'xl-in-p',
+      voltage: '12V DC (Langsung)',
+      description: 'Tahap sebelum INA219: terminal LOAD+ SCC langsung masuk ke input IN+ XL4015 merah (12V DC).',
+      category: 'buck12v',
+      nets: ['buck12v'],
+      radius: 0.0034,
+      baseColor: 0xd9381e,
+      highlightHex: 0xff5722,
+      points: [
+        sccLoadP,
+        drop(sccLoadP, -0.022, 0.004),
+        [-0.045, 0.755, 0.072],
+        [-0.255, 0.700, 0.088],
+        [xlInP[0] - 0.015, xlInP[1] + 0.010, xlInP[2] - 0.004],
+        xlInP
+      ]
+    },
     {
       id: 'scc-ina-load-pos',
+      minStage: 3,
       fromPin: 'SCC LOAD+ (12V)',
       toPin: 'INA219 VIN+',
       fromPinId: 'scc-load-p',
@@ -714,6 +785,7 @@ export function buildPinAccurateWireSpecs() {
     },
     {
       id: 'ina-xl-in-pos',
+      minStage: 3,
       fromPin: 'INA219 VIN−',
       toPin: 'XL4015 IN+',
       fromPinId: 'ina-vin-n-term',
@@ -735,6 +807,7 @@ export function buildPinAccurateWireSpecs() {
     },
     {
       id: 'scc-xl-load-neg',
+      minStage: 2,
       fromPin: 'SCC LOAD−',
       toPin: 'XL4015 IN−',
       fromPinId: 'scc-load-n',
@@ -759,6 +832,7 @@ export function buildPinAccurateWireSpecs() {
     // --- C2. INA219 SUPPLY & I2C BUS (VCC->3.3V, SCL->GPIO22, SDA->GPIO21) ---
     {
       id: 'ina-vcc-3v3',
+      minStage: 3,
       fromPin: 'ESP32 3.3V (Aux)',
       toPin: 'INA219 VCC',
       fromPinId: 'esp-aux-vcc',
@@ -784,6 +858,7 @@ export function buildPinAccurateWireSpecs() {
     },
     {
       id: 'ina-scl-22',
+      minStage: 3,
       fromPin: 'ESP32 GPIO22 (D22)',
       toPin: 'INA219 SCL',
       fromPinId: 'esp-aux-d22',
@@ -809,6 +884,7 @@ export function buildPinAccurateWireSpecs() {
     },
     {
       id: 'ina-sda-21',
+      minStage: 3,
       fromPin: 'ESP32 GPIO21 (D21)',
       toPin: 'INA219 SDA',
       fromPinId: 'esp-aux-d21',
@@ -836,12 +912,13 @@ export function buildPinAccurateWireSpecs() {
     // --- D. 6.0V SERVO POWER: XL4015 OUT+ -> Servo MG996R Red VCC ---
     {
       id: 'xl-servo-6v',
+      minStage: 2,
       fromPin: 'XL4015 OUT+ (6V)',
       toPin: 'Servo Merah (VCC)',
       fromPinId: 'xl-out-p',
       toPinId: 'servo-vcc',
       voltage: '6.0V DC',
-      description: 'Nyambung dari XL4015 OUT+ (set 6V) ke kabel merah Servo MG996R. Jangan sambung ke 3V3/5V ESP32!',
+      description: 'Nyambung dari XL4015 OUT+ (set 6V) ke kabel merah Servo MG996R. Jangan sambung ke 3V3 atau 5V ESP32!',
       category: 'servo6v',
       radius: 0.0030,
       baseColor: 0xe11d48,
@@ -857,15 +934,16 @@ export function buildPinAccurateWireSpecs() {
       ]
     },
 
-    // --- E. COMMON GROUND ON BREADBOARD (4 WIRES: XL4015 OUT−, Servo Cokelat, ESP32 GND, INA219 GND)! ---
+    // --- E. COMMON GROUND ON BREADBOARD (3 WIRES at c2; 4 WIRES at c3+ with INA219 GND) ---
     {
       id: 'gnd-xl-bb',
+      minStage: 2,
       fromPin: 'XL4015 OUT−',
       toPin: 'Breadboard Common GND',
       fromPinId: 'xl-out-n',
       toPinId: 'bb-gnd-xl',
       voltage: '0V Common GND',
-      description: 'Nyambung dari XL4015 OUT− ke Common GND Breadboard (disatukan dengan Servo, ESP32, & INA219).',
+      description: 'Nyambung dari XL4015 OUT− ke Common GND Breadboard (disatukan dengan Servo MG996R & ESP32 GND).',
       category: 'gnd',
       radius: 0.0026,
       baseColor: 0x1e2229,
@@ -880,12 +958,13 @@ export function buildPinAccurateWireSpecs() {
     },
     {
       id: 'gnd-servo-bb',
+      minStage: 2,
       fromPin: 'Servo Cokelat (GND)',
       toPin: 'Breadboard Common GND',
       fromPinId: 'servo-gnd',
       toPinId: 'bb-gnd-srv',
       voltage: '0V Common GND',
-      description: 'Nyambung dari kabel cokelat Servo MG996R ke Common GND Breadboard (disatukan dengan XL4015 OUT−, ESP32, & INA219).',
+      description: 'Nyambung dari kabel cokelat Servo MG996R ke Common GND bersama XL4015 OUT− & ESP32. Catatan: sebaiknya langsung ke titik distribusi GND, hindari arus besar servo lewat jalur panjang breadboard.',
       category: 'gnd',
       radius: 0.0026,
       baseColor: 0x6b3e1b,
@@ -902,12 +981,13 @@ export function buildPinAccurateWireSpecs() {
     },
     {
       id: 'gnd-esp-bb',
+      minStage: 2,
       fromPin: 'ESP32 GND',
       toPin: 'Breadboard Common GND',
       fromPinId: 'esp-gnd-bb',
       toPinId: 'bb-gnd-esp',
       voltage: '0V Common GND',
-      description: 'Nyambung dari pin GND ESP32 ke Common GND Breadboard supaya sinyal PWM & referensi tegangan terbaca benar.',
+      description: 'Nyambung dari pin GND ESP32 ke Common GND Breadboard supaya sinyal PWM dari ESP32 terbaca dengan benar oleh MG996R.',
       category: 'gnd',
       radius: 0.0025,
       baseColor: 0x1e2229,
@@ -922,6 +1002,7 @@ export function buildPinAccurateWireSpecs() {
     },
     {
       id: 'ina-gnd-bb',
+      minStage: 3,
       fromPin: 'INA219 GND',
       toPin: 'Breadboard Common GND',
       fromPinId: 'ina-gnd',
@@ -946,6 +1027,7 @@ export function buildPinAccurateWireSpecs() {
     // --- F. SERVO PWM SIGNAL: ESP32 GPIO18 -> Servo Orange PWM ---
     {
       id: 'pwm-esp18-servo',
+      minStage: 2,
       fromPin: 'ESP32 GPIO18',
       toPin: 'Servo Oranye (PWM)',
       fromPinId: 'esp-18',
@@ -1191,6 +1273,7 @@ export function buildPinAccurateWireSpecs() {
     // --- I. UPS 5V (QF-M6001-2 + 2x 18650 PARALLEL) POWERING ESP32 GOOUUU V4 ---
     {
       id: 'usb-ups-5v-in',
+      minStage: 4,
       fromPin: 'Adaptor / Charger USB-C 5V',
       toPin: 'UPS QF-M6001-2 USB-C IN',
       fromPinId: 'usbc-host',
@@ -1203,15 +1286,42 @@ export function buildPinAccurateWireSpecs() {
       highlightHex: 0x38bdf8,
       points: [
         [0.370, 0.025, 0.245],
-        [0.362, 0.300, 0.215],
-        [0.356, 0.560, 0.165],
-        [0.362, 0.625, 0.132],
+        [0.362, 0.300, 0.232],
+        [0.356, 0.560, 0.220],
+        [0.358, 0.630, 0.190],
+        [upsUsbIn[0] - 0.012, 0.640, upsUsbIn[2] + 0.014],
         [upsUsbIn[0] - 0.006, upsUsbIn[1], upsUsbIn[2]],
         upsUsbIn
       ]
     },
     {
+      id: 'ups-esp-5v-direct',
+      minStage: 4,
+      maxStage: 4,
+      fromPin: 'UPS QF-M6001-2 UPS+ (5V)',
+      toPin: 'ESP32 GOOUUU V4 5V',
+      fromPinId: 'ups-out-p',
+      toPinId: 'esp-pwr-5v',
+      voltage: '5.0V Boost DC (Langsung)',
+      description: 'Tahap c4 sebelum Switch 5V dipasang: kabel merah dari pad solder UPS+ masuk langsung ke pin 5V papan ekspansi GOOUUU V4 ESP32.',
+      category: 'usb',
+      radius: 0.0023,
+      baseColor: 0xdc2626,
+      highlightHex: 0x22c55e,
+      points: [
+        upsOutP,
+        [upsOutP[0] + 0.005, upsOutP[1] + 0.012, upsOutP[2] - 0.008],
+        [0.440, 0.655, 0.072],
+        [0.245, 0.656, 0.082],
+        [0.215, 0.652, 0.142],
+        [espPwr5v[0] + 0.012, espPwr5v[1] + 0.016, espPwr5v[2]],
+        [espPwr5v[0], espPwr5v[1] + 0.013, espPwr5v[2]],
+        espPwr5v
+      ]
+    },
+    {
       id: 'ups-sw-in',
+      minStage: 5,
       fromPin: 'UPS QF-M6001-2 UPS+ (5V)',
       toPin: 'Switch 5V IN (UPS+)',
       fromPinId: 'ups-out-p',
@@ -1233,6 +1343,7 @@ export function buildPinAccurateWireSpecs() {
     },
     {
       id: 'sw-esp-5v',
+      minStage: 5,
       fromPin: 'Switch 5V OUT (5V)',
       toPin: 'ESP32 GOOUUU V4 5V',
       fromPinId: 'sw-ups-out',
@@ -1255,6 +1366,7 @@ export function buildPinAccurateWireSpecs() {
     },
     {
       id: 'ups-esp-gnd',
+      minStage: 4,
       fromPin: 'UPS QF-M6001-2 UPS− (GND)',
       toPin: 'ESP32 GOOUUU V4 GND',
       fromPinId: 'ups-out-n',
@@ -1277,11 +1389,139 @@ export function buildPinAccurateWireSpecs() {
   ];
 }
 
+export function buildPinAccurateWireSpecs(stage = FULL_BUILD_STAGE) {
+  const s = clampBuildStage(stage);
+  return buildAllStageWireSpecs().filter((w) => isStageRangeActive(s, w.minStage, w.maxStage));
+}
+
+export function resolvePinForStage(basePin, stage = FULL_BUILD_STAGE) {
+  const s = clampBuildStage(stage);
+  const minStage = basePin.minStage ?? 1;
+  const stageVisible = s >= minStage;
+  if (s === FULL_BUILD_STAGE) {
+    return { ...basePin, stageVisible: true };
+  }
+
+  if (!stageVisible) {
+    return { ...basePin, stageVisible: false, status: 'KOSONG', wireIds: [] };
+  }
+
+  const out = { ...basePin, stageVisible: true };
+  switch (basePin.id) {
+    case 'esp-gnd-bb':
+      if (s < 2) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Belum terhubung (Tahap c2: Common GND)'], detail: 'Akan disambung ke Breadboard Common GND pada Tahap c2 bersama XL4015 OUT− dan Servo MG996R.' };
+      }
+      if (s < 3) {
+        return { ...out, status: 'AKTIF', wireIds: ['gnd-esp-bb', 'gnd-xl-bb', 'gnd-servo-bb'], connectedTo: ['Breadboard Common GND'], detail: 'Nyambung ke Common GND Breadboard bersama XL4015 OUT− & kabel cokelat Servo MG996R (3 kabel).' };
+      }
+      return out;
+    case 'esp-aux-d22':
+    case 'esp-aux-d21':
+    case 'esp-aux-vcc':
+      if (s < 3) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (INA219 belum dipasang · Tahap c3)'], detail: 'Header ekspansi I2C/3.3V untuk modul INA219 pada Tahap c3.' };
+      }
+      return out;
+    case 'esp-aux-gnd':
+      if (s < 3) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (INA219 belum dipasang · Tahap c3)'], detail: 'Pin aux GND cadangan pada header belakang GOOUUU V4 (INA219 dipasang di Tahap c3).' };
+      }
+      return out;
+    case 'esp-18':
+      if (s < 2) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Belum terhubung (Tahap c2: Servo MG996R)'], detail: 'Akan disambung ke kabel oranye PWM Servo MG996R pada Tahap c2 setelah output XL4015 diset 6 V.' };
+      }
+      return out;
+    case 'esp-usb':
+      if (s < 4) {
+        return { ...out, status: 'AKTIF', wireIds: [], connectedTo: ['USB Laptop / Charger 5V (Daya uji sebelum UPS)'], detail: 'Tahap sebelum UPS 5V: hubungkan ESP32 ke laptop/charger lewat USB setelah XL4015 6 V terverifikasi multimeter.' };
+      }
+      if (s === 4) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (daya utama langsung dari UPS QF-M6001-2 → header 5V/GND)'], detail: 'Tahap c4 (UPS terpasang langsung ke pin 5V): lepas jumper UPS+ → pin 5V terlebih dahulu sebelum mencolok kabel Micro-USB laptop.' };
+      }
+      return out;
+    case 'esp-goouuu-usbc':
+      if (s < 4) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (uji daya via Micro-USB · UPS QF-M6001-2 dipasang di Tahap c4)'], detail: 'Port USB5V Type-C GOOUUU V4 belum dipakai; selama Tahap c1–c3 ESP32 disuplai lewat port Micro-USB.' };
+      }
+      return out;
+    case 'esp-pwr-5v':
+      if (s < 4) {
+        return { ...out, pinName: 'Pin 5V (Kosong)', status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (ESP32 pakai USB · UPS di Tahap c4)'], detail: 'Pin 5V dibiarkan kosong saat ESP32 disuplai USB (jangan sambung 6 V XL4015 ke sini!).' };
+      }
+      if (s === 4) {
+        return { ...out, pinName: 'Pin 5V (dari UPS+)', status: 'AKTIF', wireIds: ['ups-esp-5v-direct'], connectedTo: ['UPS QF-M6001-2 UPS+ (5V)'], detail: 'Menerima suplai 5V langsung dari pad UPS+ QF-M6001-2 (lepas jumper ini sebelum mencolok USB laptop).' };
+      }
+      return out;
+    case 'esp-pwr-gnd':
+      if (s < 4) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (UPS di Tahap c4)'], detail: 'Akan menerima jalur balik GND dari UPS QF-M6001-2 pada Tahap c4.' };
+      }
+      return out;
+    case 'ups-out-p':
+      if (s === 4) {
+        return { ...out, status: 'AKTIF', wireIds: ['ups-esp-5v-direct'], connectedTo: ['ESP32 GOOUUU V4 5V'], detail: 'Pad output positif UPS+ terhubung langsung ke pin 5V ESP32 GOOUUU V4.' };
+      }
+      return out;
+    case 'ups-bat-1':
+    case 'ups-bat-2':
+      if (s === 4) {
+        return { ...out, status: 'AKTIF', wireIds: ['ups-esp-5v-direct', 'ups-esp-gnd'] };
+      }
+      return out;
+    case 'bb-gnd-xl':
+    case 'bb-gnd-srv':
+    case 'bb-gnd-esp':
+      if (s < 2) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (Common GND di Tahap c2)'], detail: 'Slot rail Common GND Breadboard akan dipakai pada Tahap c2 (XL4015 OUT−, Servo Cokelat, ESP32 GND).' };
+      }
+      return out;
+    case 'bb-gnd-ina':
+      if (s < 3) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (INA219 belum dipasang · Tahap c3)'], detail: 'Slot Common GND ke-4 untuk INA219 GND pada Tahap c3.' };
+      }
+      return out;
+    case 'xl-in-p':
+      if (s < 3) {
+        return { ...out, status: 'AKTIF', wireIds: ['scc-xl-load-pos'], connectedTo: ['SCC LOAD+ (12V)'], detail: 'Tahap sebelum INA219: menerima 12V langsung dari terminal LOAD+ Solar Charge Controller.' };
+      }
+      return out;
+    case 'xl-out-n':
+      if (s < 3) {
+        return { ...out, detail: 'Nyambung ke Common GND Breadboard (satu jalur 3 kabel dengan Servo MG996R & ESP32 GND).' };
+      }
+      return out;
+    case 'scc-load-p':
+      if (s < 2) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (XL4015 dipasang di Tahap c2)'], detail: 'Terminal 12V LOAD+ SCC akan menuju XL4015 IN+ pada Tahap c2.' };
+      }
+      if (s < 3) {
+        return { ...out, status: 'AKTIF', wireIds: ['scc-xl-load-pos'], connectedTo: ['XL4015 IN+ (Langsung)'], detail: 'Tahap sebelum INA219: menyuplai 12V langsung dari LOAD+ SCC ke XL4015 IN+.' };
+      }
+      return out;
+    case 'scc-load-n':
+      if (s < 2) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Kosong (XL4015 dipasang di Tahap c2)'], detail: 'Terminal LOAD− SCC akan menuju XL4015 IN− pada Tahap c2.' };
+      }
+      return out;
+    case 'servo-pwm':
+    case 'servo-vcc':
+    case 'servo-gnd':
+      if (s < 2) {
+        return { ...out, status: 'KOSONG', wireIds: [], connectedTo: ['Belum disambung (ukur XL4015 = 6 V dulu di Tahap c2)'], detail: 'Jangan sambungkan kabel servo sebelum output XL4015 diukur dan diatur tepat 6 V!' };
+      }
+      return out;
+    default:
+      return out;
+  }
+}
+
 /**
  * Master registry of EVERY clickable physical pin & screw terminal on the entire rig!
  * Clicking any pin in 3D highlights its exact wires & destination pin(s) and explains what it does.
  */
-export function buildClickablePinRegistry() {
+export function buildClickablePinRegistry(stage = FULL_BUILD_STAGE) {
   const pins = [
     // --- GOOUUU ESP32-S V4 Active Pins ---
     {
@@ -1439,14 +1679,14 @@ export function buildClickablePinRegistry() {
       detail: 'Jalur balik ground 5V dari pad output UPS− QF-M6001-2 ke header GND GOOUUU V4.'
     },
     {
-      id: 'sw-ups-in', board: 'Switch 5V (KCD11)', pinName: 'Terminal IN (dari UPS+)',
+      id: 'sw-ups-in', board: 'Switch 5V (KCD11)', pinName: 'Terminal IN (dari UPS+)', minStage: 5,
       pos: getUpsSwitchPinPos('IN').world, color: '#ef4444', status: 'AKTIF',
       voltage: '5.0V DC In', wireIds: ['ups-sw-in'],
       connectedTo: ['UPS QF-M6001-2 UPS+ (5V)'],
       detail: 'Terminal masuk saklar pemutus 5V yang menerima tegangan dari pad solder UPS+.'
     },
     {
-      id: 'sw-ups-out', board: 'Switch 5V (KCD11)', pinName: 'Terminal OUT (ke ESP32 5V)',
+      id: 'sw-ups-out', board: 'Switch 5V (KCD11)', pinName: 'Terminal OUT (ke ESP32 5V)', minStage: 5,
       pos: getUpsSwitchPinPos('OUT').world, color: '#22c55e', status: 'AKTIF',
       voltage: '5.0V DC Out', wireIds: ['sw-esp-5v'],
       connectedTo: ['ESP32 GOOUUU V4 5V'],
@@ -1455,49 +1695,49 @@ export function buildClickablePinRegistry() {
 
     // --- UPS QF-M6001-2 (5V Boost UPS + 2x 18650 Parallel Battery Holder) ---
     {
-      id: 'ups-in-usbc', board: 'UPS QF-M6001-2', pinName: 'Port USB-C 5V IN',
+      id: 'ups-in-usbc', board: 'UPS QF-M6001-2', pinName: 'Port USB-C 5V IN', minStage: 4,
       pos: getUpsPadPos('USBC_IN').world, color: '#38bdf8', status: 'AKTIF',
       voltage: '5V USB-C In', wireIds: ['usb-ups-5v-in'],
       connectedTo: ['Adaptor / Charger USB-C 5V'],
       detail: 'Input USB Type-C 5V pada modul UPS QF-M6001-2 untuk mengisi 2 baterai 18650 paralel (4.2V) sekaligus menyuplai konverter boost 5V.'
     },
     {
-      id: 'ups-in-5vp', board: 'UPS QF-M6001-2', pinName: 'Pad Solder 5V+',
+      id: 'ups-in-5vp', board: 'UPS QF-M6001-2', pinName: 'Pad Solder 5V+', minStage: 4,
       pos: getUpsPadPos('5V+').world, color: '#eab308', status: 'KOSONG',
       voltage: '5V Input (Paralel USB-C)', wireIds: [],
       connectedTo: ['Paralel dengan USB-C 5V IN'],
       detail: 'Pad solder alternatif input 5V+ (paralel dengan port USB Type-C di sisi kiri PCB QF-M6001-2).'
     },
     {
-      id: 'ups-in-5vn', board: 'UPS QF-M6001-2', pinName: 'Pad Solder 5V−',
+      id: 'ups-in-5vn', board: 'UPS QF-M6001-2', pinName: 'Pad Solder 5V−', minStage: 4,
       pos: getUpsPadPos('5V-').world, color: '#eab308', status: 'KOSONG',
       voltage: '0V Input (Paralel USB-C)', wireIds: [],
       connectedTo: ['Paralel dengan USB-C GND'],
       detail: 'Pad solder negatif input 5V− di pojok kiri bawah PCB QF-M6001-2.'
     },
     {
-      id: 'ups-out-p', board: 'UPS QF-M6001-2', pinName: 'UPS+ (Output 5V)',
+      id: 'ups-out-p', board: 'UPS QF-M6001-2', pinName: 'UPS+ (Output 5V)', minStage: 4,
       pos: getUpsPadPos('UPS+').world, color: '#22c55e', status: 'AKTIF',
       voltage: '5.0V Boost DC', wireIds: ['ups-sw-in'],
       connectedTo: ['Switch 5V IN (UPS+)'],
       detail: 'Pad solder output positif UPS+ menuju terminal IN Switch 5V sebelum masuk ke pin 5V ESP32 GOOUUU V4.'
     },
     {
-      id: 'ups-out-n', board: 'UPS QF-M6001-2', pinName: 'UPS− (Output GND)',
+      id: 'ups-out-n', board: 'UPS QF-M6001-2', pinName: 'UPS− (Output GND)', minStage: 4,
       pos: getUpsPadPos('UPS-').world, color: '#94a3b8', status: 'AKTIF',
       voltage: '0V GND', wireIds: ['ups-esp-gnd'],
       connectedTo: ['ESP32 GOOUUU V4 GND'],
       detail: 'Pad solder output negatif UPS− (terhubung melalui proteksi baterai U2/U3) ke GND GOOUUU V4.'
     },
     {
-      id: 'ups-bat-1', board: 'UPS QF-M6001-2', pinName: 'Baterai 18650 #1 (Belakang)',
+      id: 'ups-bat-1', board: 'UPS QF-M6001-2', pinName: 'Baterai 18650 #1 (Belakang)', minStage: 4,
       pos: getUpsPadPos('BAT1').world, color: '#0ea5e9', status: 'AKTIF',
       voltage: '3.7–4.2V Li-Ion (Paralel)', wireIds: ['ups-sw-in', 'sw-esp-5v', 'ups-esp-gnd'],
       connectedTo: ['Bus Paralel Baterai + / −'],
       detail: 'Sel Li-Ion 18650 #1 terpasang paralel pada holder bawah PCB QF-M6001-2 (proteksi overcharge/overdischarge/short).'
     },
     {
-      id: 'ups-bat-2', board: 'UPS QF-M6001-2', pinName: 'Baterai 18650 #2 (Depan)',
+      id: 'ups-bat-2', board: 'UPS QF-M6001-2', pinName: 'Baterai 18650 #2 (Depan)', minStage: 4,
       pos: getUpsPadPos('BAT2').world, color: '#0ea5e9', status: 'AKTIF',
       voltage: '3.7–4.2V Li-Ion (Paralel)', wireIds: ['ups-sw-in', 'sw-esp-5v', 'ups-esp-gnd'],
       connectedTo: ['Bus Paralel Baterai + / −'],
@@ -1510,21 +1750,21 @@ export function buildClickablePinRegistry() {
       pos: getBreadboardGndPinPos(0).world, color: '#00d4ff', status: 'AKTIF',
       voltage: '0V Common GND', wireIds: ['gnd-xl-bb'],
       connectedTo: ['XL4015 OUT−'],
-      detail: 'Nyambung ke XL4015 OUT− (Common GND bersama Servo, ESP32, & INA219).'
+      detail: 'Nyambung ke XL4015 OUT− (Common GND bersama Servo & ESP32).'
     },
     {
       id: 'bb-gnd-srv', board: 'Breadboard Common GND', pinName: 'Slot 2 (Servo)',
       pos: getBreadboardGndPinPos(1).world, color: '#00d4ff', status: 'AKTIF',
       voltage: '0V Common GND', wireIds: ['gnd-servo-bb'],
       connectedTo: ['Servo Cokelat (GND)'],
-      detail: 'Nyambung ke kabel cokelat Servo MG996R (Common GND).'
+      detail: 'Nyambung ke kabel cokelat Servo MG996R (Common GND; sebaiknya langsung ke titik distribusi GND agar arus besar servo tidak lewat jalur panjang breadboard).'
     },
     {
       id: 'bb-gnd-esp', board: 'Breadboard Common GND', pinName: 'Slot 3 (ESP32)',
       pos: getBreadboardGndPinPos(2).world, color: '#00d4ff', status: 'AKTIF',
       voltage: '0V Common GND', wireIds: ['gnd-esp-bb'],
       connectedTo: ['ESP32 GND'],
-      detail: 'Nyambung ke GND ESP32 (Common GND).'
+      detail: 'Nyambung ke GND ESP32 (Common GND supaya sinyal PWM terbaca benar oleh MG996R).'
     },
     {
       id: 'bb-gnd-ina', board: 'Breadboard Common GND', pinName: 'Slot 4 (INA219)',
@@ -1536,56 +1776,56 @@ export function buildClickablePinRegistry() {
 
     // --- INA219 High-Side Current/Voltage Sensor (Screw Terminals + 6-Pin Header) ---
     {
-      id: 'ina-vin-p-term', board: 'INA219', pinName: 'VIN+ (Sekrup 12V In)',
+      id: 'ina-vin-p-term', board: 'INA219', pinName: 'VIN+ (Sekrup 12V In)', minStage: 3,
       pos: getIna219ScrewPos('VIN+').world, color: '#ff5722', status: 'AKTIF',
       voltage: '12V DC (SCC LOAD+)', wireIds: ['scc-ina-load-pos'],
       connectedTo: ['SCC LOAD+ (12V)'],
       detail: 'Terminal sekrup sisi tinggi VIN+ menerima 12V dari terminal LOAD+ Solar Charge Controller menuju resistor shunt R100 (0.1Ω).'
     },
     {
-      id: 'ina-vin-n-term', board: 'INA219', pinName: 'VIN− (Sekrup 12V Out)',
+      id: 'ina-vin-n-term', board: 'INA219', pinName: 'VIN− (Sekrup 12V Out)', minStage: 3,
       pos: getIna219ScrewPos('VIN-').world, color: '#fb923c', status: 'AKTIF',
       voltage: '12V DC (Shunt Out)', wireIds: ['ina-xl-in-pos'],
       connectedTo: ['XL4015 IN+'],
       detail: 'Terminal sekrup VIN− keluar dari sisi hilir resistor shunt R100 langsung menuju input IN+ XL4015 merah.'
     },
     {
-      id: 'ina-vcc', board: 'INA219', pinName: 'VCC (3.3V)',
+      id: 'ina-vcc', board: 'INA219', pinName: 'VCC (3.3V)', minStage: 3,
       pos: getIna219PinPos(0).world, color: '#ef4444', status: 'AKTIF',
       voltage: '3.3V DC', wireIds: ['ina-vcc-3v3'],
       connectedTo: ['ESP32 3.3V (Aux)'],
       detail: 'Suplai chip INA219 3.3V dari ESP32 (chip mendukung 3–5.5V, terpisah dari tegangan bus 12V pada VIN+/VIN−).'
     },
     {
-      id: 'ina-gnd', board: 'INA219', pinName: 'GND',
+      id: 'ina-gnd', board: 'INA219', pinName: 'GND', minStage: 3,
       pos: getIna219PinPos(1).world, color: '#00d4ff', status: 'AKTIF',
       voltage: '0V Common GND', wireIds: ['ina-gnd-bb'],
       connectedTo: ['Breadboard Common GND'],
       detail: 'Nyambung ke Common GND (sama dengan Controller LOAD− & ESP32 GND) agar pengukuran bus voltage 0–26V akurat.'
     },
     {
-      id: 'ina-scl', board: 'INA219', pinName: 'SCL (I2C)',
+      id: 'ina-scl', board: 'INA219', pinName: 'SCL (I2C)', minStage: 3,
       pos: getIna219PinPos(2).world, color: '#06b6d4', status: 'AKTIF',
       voltage: '3.3V I2C', wireIds: ['ina-scl-22'],
       connectedTo: ['ESP32 GPIO22 (D22)'],
       detail: 'Jalur clock I2C ke GPIO22 (D22) ESP32 (bus I2C bersama Tiny RTC).'
     },
     {
-      id: 'ina-sda', board: 'INA219', pinName: 'SDA (I2C)',
+      id: 'ina-sda', board: 'INA219', pinName: 'SDA (I2C)', minStage: 3,
       pos: getIna219PinPos(3).world, color: '#10b981', status: 'AKTIF',
       voltage: '3.3V I2C', wireIds: ['ina-sda-21'],
       connectedTo: ['ESP32 GPIO21 (D21)'],
       detail: 'Jalur data I2C ke GPIO21 (D21) ESP32 (alamat default I2C 0x40).'
     },
     {
-      id: 'ina-vin-n-hdr', board: 'INA219', pinName: 'VIN− (Pin Header)',
+      id: 'ina-vin-n-hdr', board: 'INA219', pinName: 'VIN− (Pin Header)', minStage: 3,
       pos: getIna219PinPos(4).world, color: '#eab308', status: 'KOSONG',
       voltage: 'Paralel Sekrup VIN−', wireIds: [],
       connectedTo: ['Kosong (jalur 12V lewat terminal sekrup VIN−)'],
       detail: 'Pin header VIN− paralel secara internal dengan terminal sekrup biru VIN−; jalur arus utama memakai terminal sekrup.'
     },
     {
-      id: 'ina-vin-p-hdr', board: 'INA219', pinName: 'VIN+ (Pin Header)',
+      id: 'ina-vin-p-hdr', board: 'INA219', pinName: 'VIN+ (Pin Header)', minStage: 3,
       pos: getIna219PinPos(5).world, color: '#eab308', status: 'KOSONG',
       voltage: 'Paralel Sekrup VIN+', wireIds: [],
       connectedTo: ['Kosong (jalur 12V lewat terminal sekrup VIN+)'],
@@ -1594,28 +1834,28 @@ export function buildClickablePinRegistry() {
 
     // --- Red XL4015 CC/CV 5A Screw Terminals ---
     {
-      id: 'xl-in-p', board: 'XL4015 Merah', pinName: 'IN+',
+      id: 'xl-in-p', board: 'XL4015 Merah', pinName: 'IN+', minStage: 2,
       pos: getXl4015PinPos('IN+').world, color: '#ff5722', status: 'AKTIF',
       voltage: '12V DC', wireIds: ['ina-xl-in-pos'],
       connectedTo: ['INA219 VIN−'],
       detail: 'Menerima 12V dari keluaran shunt INA219 VIN− (berasal dari SCC LOAD+).'
     },
     {
-      id: 'xl-in-n', board: 'XL4015 Merah', pinName: 'IN−',
+      id: 'xl-in-n', board: 'XL4015 Merah', pinName: 'IN−', minStage: 2,
       pos: getXl4015PinPos('IN-').world, color: '#fb923c', status: 'AKTIF',
       voltage: '0V Input', wireIds: ['scc-xl-load-neg'],
       connectedTo: ['SCC LOAD−'],
       detail: 'Nyambung dari SCC LOAD− masuk ke XL4015.'
     },
     {
-      id: 'xl-out-p', board: 'XL4015 Merah', pinName: 'OUT+ (6V)',
+      id: 'xl-out-p', board: 'XL4015 Merah', pinName: 'OUT+ (6V)', minStage: 2,
       pos: getXl4015PinPos('OUT+').world, color: '#ff69b4', status: 'AKTIF',
       voltage: '6.0V DC', wireIds: ['xl-servo-6v'],
       connectedTo: ['Servo Merah (VCC)'],
       detail: 'Nyambung ke kabel merah Servo MG996R (6V). Jangan sambung ke 3V3/5V ESP32!'
     },
     {
-      id: 'xl-out-n', board: 'XL4015 Merah', pinName: 'OUT− (GND)',
+      id: 'xl-out-n', board: 'XL4015 Merah', pinName: 'OUT− (GND)', minStage: 2,
       pos: getXl4015PinPos('OUT-').world, color: '#00d4ff', status: 'AKTIF',
       voltage: '0V Common GND', wireIds: ['gnd-xl-bb'],
       connectedTo: ['Breadboard Common GND'],
@@ -1824,13 +2064,14 @@ export function buildClickablePinRegistry() {
       connectedTo: ['SCC BAT−'], detail: 'Nyambung ke terminal BAT− Charge Controller.'
     }
   ];
-  return pins;
+  return pins.map((p) => resolvePinForStage(p, stage));
 }
 
 /**
  * Exact 3D anchor coordinates for crisp, well-spaced macro pin callout badges (zero overlap).
  */
-export function buildMacroPinCallouts() {
+export function buildMacroPinCallouts(stage = FULL_BUILD_STAGE) {
+  const s = clampBuildStage(stage);
   const p34 = getGoouuuPinPos('front', 4, 'S').world;
   const p22 = getGoouuuPinPos('rear', 2, 'S').world;
   const pAux22 = getGoouuuAuxPinPos('D22').world;
@@ -1851,31 +2092,32 @@ export function buildMacroPinCallouts() {
   const pUpsBat = getUpsPadPos('BAT2').world;
   const pEsp5v = getGoouuuPwrPinPos('5V').world;
 
-  return [
-    { id: 'pin-34-35',   label: 'LDR 1 & 2 → ESP32 (AO · 3.3V · GND)', pos: [p34[0] + 0.004, p34[1] - 0.003, p34[2] + 0.015], color: '#facc15', group: 'esp' },
-    { id: 'pin-3v3',     label: 'JUMP 3.3V',                           pos: [BOARD_ORIGINS.esp.x + 0.053, BOARD_ORIGINS.esp.y + 0.020, BOARD_ORIGINS.esp.z + 0.028], color: '#c8d828', group: 'esp' },
-    { id: 'pin-esp-5v',  label: '5V & GND ← UPS QF-M6001-2',           pos: [pEsp5v[0] - 0.004, pEsp5v[1] + 0.014, pEsp5v[2] + 0.015], color: '#22c55e', group: 'esp' },
-    { id: 'pin-ports',   label: 'Port: DC6.5-16V · Micro-USB · USB5V Type-C', pos: [BOARD_ORIGINS.esp.x + 0.072, BOARD_ORIGINS.esp.y + 0.018, BOARD_ORIGINS.esp.z - 0.008], color: '#38bdf8', group: 'esp' },
-    { id: 'pin-i2c',     label: 'Tiny RTC → ESP32 (21 · 22 · 3.3V · GND)', pos: [p22[0] - 0.008, p22[1] + 0.018, p22[2] - 0.008], color: '#2ecc71', group: 'esp' },
-    { id: 'pin-aux-i2c', label: 'Aux INA219: D22 · D21 · VCC 3.3V',    pos: [pAux22[0] + 0.006, pAux22[1] + 0.020, pAux22[2] - 0.014], color: '#06b6d4', group: 'esp' },
-    { id: 'pin-18',      label: 'GPIO18 → Servo Oranye (PWM)',         pos: [p18[0] + 0.026, p18[1] + 0.028, p18[2] - 0.006], color: '#ff9f0a', group: 'esp' },
-    { id: 'pin-rtc-i2c', label: 'Tiny RTC: SCL·SDA·VCC·GND',           pos: [pRtc[0] + 0.018, pRtc[1] + 0.022, pRtc[2] - 0.010], color: '#38bdf8', group: 'esp' },
-    { id: 'pin-ups-in',  label: 'USB-C 5V IN → Charger U1 + Q1-Q4',    pos: [pUpsIn[0] + 0.006, pUpsIn[1] + 0.010, pUpsIn[2] + 0.022], color: '#38bdf8', group: 'ups' },
-    { id: 'pin-ups-ic',  label: 'Boost 2R2 · U4 · 3×SS54 · 4×220µF 16V', pos: [BOARD_ORIGINS.ups.x + 0.004, BOARD_ORIGINS.ups.y + 0.028, BOARD_ORIGINS.ups.z - 0.024], color: '#22c55e', group: 'ups' },
-    { id: 'pin-ups-sw',  label: 'Switch 5V (I/O): Putus UPS+ saat Flash USB', pos: [BOARD_ORIGINS.upsSwitch.x - 0.024, BOARD_ORIGINS.upsSwitch.y + 0.034, BOARD_ORIGINS.upsSwitch.z - 0.012], color: '#ef4444', group: 'ups' },
-    { id: 'pin-ups-out', label: 'UPS+ → Switch → ESP32 5V · UPS− → GND', pos: [pUpsOut[0] - 0.034, pUpsOut[1] + 0.016, pUpsOut[2] + 0.008], color: '#ef4444', group: 'ups' },
-    { id: 'pin-ups-bat', label: '2× Baterai 18650 (4.2V Paralel)',     pos: [pUpsBat[0], pUpsBat[1] - 0.008, pUpsBat[2] + 0.022], color: '#0ea5e9', group: 'ups' },
-    { id: 'pin-ina-vin', label: 'VIN+ ← SCC LOAD+ · VIN− → XL4015 IN+', pos: [pInaVin[0] + 0.007, pInaVin[1] + 0.025, pInaVin[2] - 0.015], color: '#ff5722', group: 'ina219' },
-    { id: 'pin-ina-ic',  label: 'IC INA219A (0x40) · Shunt R100 (0.1Ω)', pos: [BOARD_ORIGINS.ina219.x - 0.026, BOARD_ORIGINS.ina219.y + 0.018, BOARD_ORIGINS.ina219.z + 0.003], color: '#06b6d4', group: 'ina219' },
-    { id: 'pin-ina-hdr', label: 'VCC(3.3V) · GND · SCL(22) · SDA(21)', pos: [pInaHdr[0], pInaHdr[1] - 0.006, pInaHdr[2] + 0.018], color: '#2ecc71', group: 'ina219' },
-    { id: 'pin-bb-gnd',  label: 'Common GND (4 Kabel: XL4015 · Servo · ESP32 · INA219)', pos: [pBb[0], pBb[1] + 0.028, pBb[2] - 0.008], color: '#00d4ff', group: 'breadboard' },
-    { id: 'pin-xl-in',   label: 'XL4015 IN+ ← INA219 VIN− · IN− ← LOAD−', pos: [pXlIn[0] - 0.008, pXlIn[1] + 0.024, pXlIn[2] - 0.010], color: '#ff5722', group: 'xl4015' },
-    { id: 'pin-xl-out',  label: 'XL4015 OUT+ 6V · OUT− GND',           pos: [pXlOut[0] + 0.008, pXlOut[1] + 0.024, pXlOut[2] + 0.012], color: '#ff69b4', group: 'xl4015' },
-    { id: 'pin-ldr1',    label: 'LDR 1 → ESP32 (DO kosong)',           pos: [pLdr1[0] - 0.008, pLdr1[1] + 0.008, pLdr1[2] + 0.010], color: '#facc15', group: 'ldr' },
-    { id: 'pin-ldr2',    label: 'LDR 2 → ESP32 (DO kosong)',           pos: [pLdr2[0] + 0.008, pLdr2[1] + 0.008, pLdr2[2] + 0.010], color: '#c084fc', group: 'ldr' },
-    { id: 'pin-watt',    label: 'Watt Meter: Panel → SCC',             pos: [pWatt[0] + 0.074, pWatt[1] + 0.048, pWatt[2] + 0.022], color: '#38bdf8', group: 'watt_scc' },
-    { id: 'pin-scc-trm', label: 'SCC: +PV− · +BAT− · +LOAD−',          pos: [pScc[0] + 0.015, pScc[1] - 0.016, pScc[2] + 0.016], color: '#ff5722', group: 'watt_scc' }
+  const allCallouts = [
+    { id: 'pin-34-35',   minStage: 1, label: 'LDR 1 & 2 → ESP32 (AO · 3.3V · GND)', pos: [p34[0] + 0.004, p34[1] - 0.003, p34[2] + 0.015], color: '#facc15', group: 'esp' },
+    { id: 'pin-3v3',     minStage: 1, label: 'JUMP 3.3V',                           pos: [BOARD_ORIGINS.esp.x + 0.053, BOARD_ORIGINS.esp.y + 0.020, BOARD_ORIGINS.esp.z + 0.028], color: '#c8d828', group: 'esp' },
+    { id: 'pin-esp-5v',  minStage: 4, label: s === 4 ? '5V & GND ← UPS+ / UPS− (Langsung)' : '5V & GND ← UPS QF-M6001-2', pos: [pEsp5v[0] - 0.004, pEsp5v[1] + 0.014, pEsp5v[2] + 0.015], color: '#22c55e', group: 'esp' },
+    { id: 'pin-ports',   minStage: 1, label: 'Port: DC6.5-16V · Micro-USB · USB5V Type-C', pos: [BOARD_ORIGINS.esp.x + 0.072, BOARD_ORIGINS.esp.y + 0.018, BOARD_ORIGINS.esp.z - 0.008], color: '#38bdf8', group: 'esp' },
+    { id: 'pin-i2c',     minStage: 1, label: 'Tiny RTC → ESP32 (21 · 22 · 3.3V · GND)', pos: [p22[0] - 0.008, p22[1] + 0.018, p22[2] - 0.008], color: '#2ecc71', group: 'esp' },
+    { id: 'pin-aux-i2c', minStage: 3, label: 'Aux INA219: D22 · D21 · VCC 3.3V',    pos: [pAux22[0] + 0.006, pAux22[1] + 0.020, pAux22[2] - 0.014], color: '#06b6d4', group: 'esp' },
+    { id: 'pin-18',      minStage: 2, label: 'GPIO18 → Servo Oranye (PWM)',         pos: [p18[0] + 0.026, p18[1] + 0.028, p18[2] - 0.006], color: '#ff9f0a', group: 'esp' },
+    { id: 'pin-rtc-i2c', minStage: 1, label: 'Tiny RTC: SCL·SDA·VCC·GND',           pos: [pRtc[0] + 0.018, pRtc[1] + 0.022, pRtc[2] - 0.010], color: '#38bdf8', group: 'esp' },
+    { id: 'pin-ups-in',  minStage: 4, label: 'USB-C 5V IN → Charger U1 + Q1-Q4',    pos: [pUpsIn[0] + 0.006, pUpsIn[1] + 0.010, pUpsIn[2] + 0.022], color: '#38bdf8', group: 'ups' },
+    { id: 'pin-ups-ic',  minStage: 4, label: 'Boost 2R2 · U4 · 3×SS54 · 4×220µF 16V', pos: [BOARD_ORIGINS.ups.x + 0.004, BOARD_ORIGINS.ups.y + 0.028, BOARD_ORIGINS.ups.z - 0.024], color: '#22c55e', group: 'ups' },
+    { id: 'pin-ups-sw',  minStage: 5, label: 'Switch 5V (I/O): Putus UPS+ saat Flash USB', pos: [BOARD_ORIGINS.upsSwitch.x - 0.024, BOARD_ORIGINS.upsSwitch.y + 0.034, BOARD_ORIGINS.upsSwitch.z - 0.012], color: '#ef4444', group: 'ups' },
+    { id: 'pin-ups-out', minStage: 4, label: s === 4 ? 'UPS+ → ESP32 5V · UPS− → GND' : 'UPS+ → Switch → ESP32 5V · UPS− → GND', pos: [pUpsOut[0] - 0.034, pUpsOut[1] + 0.016, pUpsOut[2] + 0.008], color: '#ef4444', group: 'ups' },
+    { id: 'pin-ups-bat', minStage: 4, label: '2× Baterai 18650 (4.2V Paralel)',     pos: [pUpsBat[0], pUpsBat[1] - 0.008, pUpsBat[2] + 0.022], color: '#0ea5e9', group: 'ups' },
+    { id: 'pin-ina-vin', minStage: 3, label: 'VIN+ ← SCC LOAD+ · VIN− → XL4015 IN+', pos: [pInaVin[0] + 0.007, pInaVin[1] + 0.025, pInaVin[2] - 0.015], color: '#ff5722', group: 'ina219' },
+    { id: 'pin-ina-ic',  minStage: 3, label: 'IC INA219A (0x40) · Shunt R100 (0.1Ω)', pos: [BOARD_ORIGINS.ina219.x - 0.026, BOARD_ORIGINS.ina219.y + 0.018, BOARD_ORIGINS.ina219.z + 0.003], color: '#06b6d4', group: 'ina219' },
+    { id: 'pin-ina-hdr', minStage: 3, label: 'VCC(3.3V) · GND · SCL(22) · SDA(21)', pos: [pInaHdr[0], pInaHdr[1] - 0.006, pInaHdr[2] + 0.018], color: '#2ecc71', group: 'ina219' },
+    { id: 'pin-bb-gnd',  minStage: 2, label: s < 3 ? 'Common GND (3 Kabel: XL4015 · Servo · ESP32)' : 'Common GND (4 Kabel: XL4015 · Servo · ESP32 · INA219)', pos: [pBb[0], pBb[1] + 0.028, pBb[2] - 0.008], color: '#00d4ff', group: 'breadboard' },
+    { id: 'pin-xl-in',   minStage: 2, label: s < 3 ? 'XL4015 IN+ ← SCC LOAD+ · IN− ← LOAD−' : 'XL4015 IN+ ← INA219 VIN− · IN− ← LOAD−', pos: [pXlIn[0] - 0.008, pXlIn[1] + 0.024, pXlIn[2] - 0.010], color: '#ff5722', group: 'xl4015' },
+    { id: 'pin-xl-out',  minStage: 2, label: 'XL4015 OUT+ 6V · OUT− GND',           pos: [pXlOut[0] + 0.008, pXlOut[1] + 0.024, pXlOut[2] + 0.012], color: '#ff69b4', group: 'xl4015' },
+    { id: 'pin-ldr1',    minStage: 1, label: 'LDR 1 → ESP32 (DO kosong)',           pos: [pLdr1[0] - 0.008, pLdr1[1] + 0.008, pLdr1[2] + 0.010], color: '#facc15', group: 'ldr' },
+    { id: 'pin-ldr2',    minStage: 1, label: 'LDR 2 → ESP32 (DO kosong)',           pos: [pLdr2[0] + 0.008, pLdr2[1] + 0.008, pLdr2[2] + 0.010], color: '#c084fc', group: 'ldr' },
+    { id: 'pin-watt',    minStage: 1, label: 'Watt Meter: Panel → SCC',             pos: [pWatt[0] + 0.074, pWatt[1] + 0.048, pWatt[2] + 0.022], color: '#38bdf8', group: 'watt_scc' },
+    { id: 'pin-scc-trm', minStage: 1, label: 'SCC: +PV− · +BAT− · +LOAD−',          pos: [pScc[0] + 0.015, pScc[1] - 0.016, pScc[2] + 0.016], color: '#ff5722', group: 'watt_scc' }
   ];
+  return allCallouts.filter((c) => isStageRangeActive(s, c.minStage, c.maxStage));
 }
 
 export const HOTSPOT_WIRE_NET_MAP = {
@@ -1893,6 +2135,11 @@ export const HOTSPOT_WIRE_NET_MAP = {
   servo:      ['servo6v', 'pwm', 'gnd'],
   battery:    ['bat']
 };
+
+export function getHotspotWireNetsForStage(hotspotId, stage = FULL_BUILD_STAGE) {
+  const nets = HOTSPOT_WIRE_NET_MAP[hotspotId] || [];
+  return nets.filter((nk) => isWireNetVisibleAtStage(nk, stage));
+}
 
 /**
  * Picks an unobstructed camera offset when focusing on any 3D pin coordinate,

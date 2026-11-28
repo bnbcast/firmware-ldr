@@ -55,9 +55,7 @@ html, body {
 /* macOS Frosted Glass Titlebar (56px) */
 .topbar {
   height: 56px;
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  background: rgba(255, 255, 255, 0.94);
   border-bottom: 1px solid var(--hairline);
   padding: 0 18px;
   display: flex;
@@ -155,6 +153,7 @@ html, body {
 
 /* Main Stage */
 .view-stage {
+  position: relative;
   height: calc(100vh - 56px);
   padding: 14px 18px 22px;
   overflow-y: auto;
@@ -238,9 +237,7 @@ html, body {
 }
 
 .card {
-  background: var(--surface);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.94);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   padding: 14px 16px;
@@ -667,9 +664,7 @@ html, body {
   max-width: 230px;
   padding: 6px 9px;
   border-radius: 8px;
-  background: rgba(28, 28, 30, 0.94);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(28, 28, 30, 0.96);
   color: #f5f5f7;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
   font-size: 0.72rem;
@@ -1149,8 +1144,7 @@ html, body {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(20, 19, 20, 0.35);
-  backdrop-filter: blur(3px);
+  background: rgba(20, 19, 20, 0.42);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1286,17 +1280,38 @@ body.role-admin .mac-ico {
   text-align: center;
 }
 
-/* Full-bleed edge-to-edge stage when Tab 4 Rendering 3D is active */
+/* Full-bleed edge-to-edge stage when Tab 4 Rendering 3D is active.
+   Keep #view-twin3d GPU-retained (visibility:hidden instead of display:none) so switching tabs never drops WebGL state. */
 .view-stage:has(#view-twin3d.active) {
   padding: 0;
   overflow: hidden;
 }
 
 #view-twin3d.view {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(100vh - 56px);
+  max-height: 100%;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+  contain: layout style;
+}
+
+#view-twin3d.view.active {
+  position: relative;
   flex: 1 1 100%;
   min-height: 0;
   height: 100%;
-  position: relative;
+  max-height: none;
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 2;
 }
 
 .rig3d-stage {
@@ -1343,6 +1358,7 @@ body.role-admin .mac-ico {
   cursor: pointer;
   white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+  will-change: transform;
   transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
 
@@ -1381,8 +1397,8 @@ body.role-admin .mac-ico {
   font-weight: 700;
   letter-spacing: 0.01em;
   white-space: nowrap;
+  will-change: transform;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
-  transition: opacity 0.14s ease;
 }
 
 /* Floating hover tooltip when pointer hovers a 3D pin or wire (no backdrop-filter) */
@@ -1398,6 +1414,7 @@ body.role-admin .mac-ico {
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(56, 189, 248, 0.45);
   color: #f8fafc;
+  will-change: transform;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
 }
 
@@ -1415,18 +1432,30 @@ body.role-admin .mac-ico {
   line-height: 1.25;
 }
 
-/* Compact top-left telemetry HUD + collapsible ? Panduan popover */
-.rig3d-hud-top {
+/* Top-left vertical stack: telemetry HUD + Git-style stage/undo bar */
+.rig3d-top-left-stack {
   position: absolute;
   top: 14px;
   left: 16px;
-  z-index: 12;
+  z-index: 16;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+  max-width: calc(100vw - 320px);
+}
+
+/* Compact top-left telemetry HUD + collapsible ? Panduan popover */
+.rig3d-hud-top {
+  position: relative;
+  z-index: 2;
   pointer-events: auto;
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid rgba(15, 23, 42, 0.11);
   border-radius: 11px;
   padding: 9px 12px;
-  max-width: min(460px, calc(100vw - 320px));
+  max-width: min(460px, 100%);
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.09);
 }
 
@@ -1940,7 +1969,7 @@ button.route-node:hover {
 
 .side-tabs-bar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   padding: 6px 9px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.08);
@@ -1953,11 +1982,12 @@ button.route-node:hover {
   background: transparent;
   color: #64748b;
   font-family: inherit;
-  font-size: 0.72rem;
+  font-size: 0.69rem;
   font-weight: 600;
-  padding: 5px 8px;
+  padding: 5px 4px;
   border-radius: 7px;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
@@ -2136,6 +2166,338 @@ button.route-node:focus-visible,
   outline-offset: 2px;
 }
 
+.dock-btn:disabled,
+.stage-bar-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Compact Floating Git-Style Build Stage & Undo/Redo Bar (no backdrop-filter over WebGL) */
+.rig3d-stage-bar {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 6px;
+  max-width: 100%;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.13);
+}
+
+.stage-bar-hist,
+.stage-bar-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.stage-bar-sep {
+  width: 1px;
+  height: 18px;
+  background: rgba(15, 23, 42, 0.12);
+  margin: 0 2px;
+}
+
+.stage-bar-btn {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(15, 23, 42, 0.11);
+  background: #f8fafc;
+  color: #0f172a;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.70rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.stage-bar-btn:hover {
+  background: #eff6ff;
+  border-color: #007aff;
+  color: #0066d6;
+}
+
+.stage-bar-pill {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid rgba(0, 122, 255, 0.28);
+  background: rgba(239, 246, 255, 0.95);
+  color: #0f172a;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.71rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.stage-bar-pill:hover {
+  background: #dbeafe;
+  border-color: #007aff;
+}
+
+.stage-code {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.stage-label {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tab 3: Tahap Rakit (Git Timeline + Wiring Table + Checklist) */
+.stage-panel-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr;
+  gap: 4px;
+}
+
+.stage-commit-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+
+.stage-commit-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 7px;
+  border-radius: 7px;
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  background: #f8fafc;
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.stage-commit-btn:hover {
+  background: #eff6ff;
+  border-color: rgba(0, 122, 255, 0.38);
+}
+
+.stage-commit-btn.active {
+  background: #eff6ff;
+  border-color: #007aff;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.12);
+}
+
+.stage-commit-btn.future {
+  opacity: 0.62;
+  background: #f1f5f9;
+}
+
+.stage-commit-node {
+  width: 11px;
+  height: 11px;
+  margin-top: 3px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid #94a3b8;
+  background: #ffffff;
+}
+
+.stage-commit-btn.done .stage-commit-node {
+  border-color: #16a34a;
+  background: #16a34a;
+}
+
+.stage-commit-btn.active .stage-commit-node {
+  border-color: #007aff;
+  background: #007aff;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.18);
+}
+
+.stage-commit-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stage-commit-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.stage-commit-tag {
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+
+.stage-commit-btn.active .stage-commit-tag {
+  background: #007aff;
+  color: #ffffff;
+}
+
+.stage-commit-delta {
+  font-size: 0.63rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.stage-commit-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #0f172a;
+}
+
+.stage-commit-sub {
+  display: none;
+  font-size: 0.64rem;
+  line-height: 1.28;
+  color: #475569;
+}
+
+.stage-commit-btn.active .stage-commit-sub {
+  display: block;
+}
+
+.stage-detail-card {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  border-radius: 9px;
+  border: 1px solid rgba(15, 23, 42, 0.11);
+  background: #ffffff;
+}
+
+.stage-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.stage-detail-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.stage-detail-summary {
+  font-size: 0.68rem;
+  line-height: 1.38;
+  color: #334155;
+}
+
+.stage-wire-table {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 7px;
+  border-radius: 7px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.stage-wire-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 0.65rem;
+  line-height: 1.3;
+  padding: 2px 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.stage-wire-row:first-child {
+  border-top: 0;
+}
+
+.stage-wire-from {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.stage-wire-arrow {
+  color: #007aff;
+  font-weight: 700;
+}
+
+.stage-wire-to {
+  color: #1e40af;
+  font-weight: 600;
+  text-align: right;
+}
+
+.stage-safety-box {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: rgba(254, 243, 199, 0.72);
+  border: 1px solid rgba(217, 119, 6, 0.34);
+}
+
+.stage-safety-title {
+  font-size: 0.69rem;
+  font-weight: 700;
+  color: #92400e;
+}
+
+.stage-safety-warn {
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.34;
+  color: #991b1b;
+  background: rgba(254, 226, 226, 0.85);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  border-radius: 5px;
+  padding: 5px 6px;
+}
+
+.stage-safety-steps {
+  margin: 0;
+  padding-left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.65rem;
+  line-height: 1.35;
+  color: #78350f;
+}
+
 .rig3d-light-slider-wrap {
   display: flex;
   align-items: center;
@@ -2173,9 +2535,18 @@ button.route-node:focus-visible,
     bottom: 54px;
     width: min(460px, calc(100vw - 310px));
   }
+  .rig3d-top-left-stack {
+    max-width: calc(100vw - 318px);
+  }
 }
 
 @media (max-width: 1024px) {
+  #view-twin3d.view {
+    height: calc(100vh - 140px);
+  }
+  #view-twin3d.view.active {
+    height: auto;
+  }
   .rig3d-stage {
     height: calc(100vh - 140px);
     min-height: 480px;
@@ -2186,7 +2557,9 @@ button.route-node:focus-visible,
   .rig3d-nav-pad {
     right: 256px;
   }
-  .rig3d-hud-top,
+  .rig3d-top-left-stack {
+    max-width: calc(100vw - 266px);
+  }
   .rig3d-inspector {
     max-width: calc(100vw - 266px);
     width: auto;
@@ -2194,7 +2567,7 @@ button.route-node:focus-visible,
 }
 
 @media (max-width: 680px) {
-  .rig3d-hud-top {
+  .rig3d-top-left-stack {
     max-width: calc(100vw - 28px);
   }
   .rig3d-inspector {

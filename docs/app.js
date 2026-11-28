@@ -10,9 +10,28 @@ const CF_API_BASE = 'https://solartracker-api.pages.dev';
 const ADMIN_TOKEN_KEY = 'st_admin_token_v1';
 
 let isAdmin = IS_LOCAL;
+let activeViewName = document.querySelector('.nav-tab.active')?.dataset?.view || 'live';
+let checklistDirty = false;
+let logsDirty = false;
+let chartDirty = false;
+let chartRafId = 0;
+let lastChecklistKey = '';
+let lastFaultsKey = '';
 let activeChartRange = 'live';
 let historyPts = [];
 let historySummaryTxt = '';
+
+function scheduleChartDraw() {
+  if (activeViewName !== 'live') {
+    chartDirty = true;
+    return;
+  }
+  if (chartRafId) return;
+  chartRafId = requestAnimationFrame(() => {
+    chartRafId = 0;
+    drawChart();
+  });
+}
 
 // Video-Editor-Style Interactive Timeline State (Zoom + Pan + Playhead)
 let tlZoom = 1;       // 1x .. 12x
@@ -585,8 +604,17 @@ function drawChart() {
 function renderChecklist(items) {
   const box = document.getElementById('checklistBox');
   if (!box || !Array.isArray(items)) return;
+  if (activeViewName !== 'check') {
+    checklistDirty = true;
+    return;
+  }
+  const key = items.map((it) => `${it.title}|${it.status}|${it.badge}|${it.detail}`).join('||');
+  if (key === lastChecklistKey && !checklistDirty) return;
+  lastChecklistKey = key;
+  checklistDirty = false;
+
   let okCount = 0, errCount = 0;
-  box.innerHTML = '';
+  const frag = document.createDocumentFragment();
   for (const it of items) {
     if (it.status === 'ok') okCount++;
     if (it.status === 'err') errCount++;
@@ -600,8 +628,9 @@ function renderChecklist(items) {
       </div>
       <div class="check-row-detail">${it.detail}</div>
     `;
-    box.appendChild(div);
+    frag.appendChild(div);
   }
+  box.replaceChildren(frag);
   const sumClass = errCount > 0 ? 'st-err' : (okCount === items.length ? 'st-ok' : 'st-warn');
   setPill('checklistSummaryPill', 'checklistPillText', sumClass, `${okCount}/${items.length} OK`);
 }
@@ -731,23 +760,28 @@ function renderStatus(d) {
     slEl.max = String(sMax);
     if (!sliderDragging) slEl.value = srv.target;
   }
-  drawServoGauge(srv.deg, srv.target, lightEst.deg);
+  if (activeViewName === 'live') {
+    drawServoGauge(srv.deg, srv.target, lightEst.deg);
+  }
   renderSunDebug(d);
 
-  // Faults & Diagnosis
+  // Faults & Diagnosis (memoized to prevent 4Hz DOM rebuilds)
   const faults = Array.isArray(d.faults) ? d.faults : [];
   const fb = document.getElementById('faultCountBadge');
   if (faults.length > 0) { fb.style.display = 'inline-block'; fb.textContent = String(faults.length); }
   else fb.style.display = 'none';
 
-  const fp = document.getElementById('faultPills');
-  fp.innerHTML = '';
-  if (faults.length === 0) {
-    fp.innerHTML = '<span class="status-pill st-ok"><span class="status-dot"></span>NO FAULTS</span>';
-  } else {
-    for (const f of faults) {
-      const cls = (f.includes('BROWNOUT') || f.includes('WIRING') || f.includes('WRONG') || f.includes('NO_RESPONSE')) ? 'st-err' : 'st-warn';
-      fp.innerHTML += `<span class="status-pill ${cls}"><span class="status-dot"></span>${f}</span>`;
+  const faultsKey = faults.join('|');
+  if (faultsKey !== lastFaultsKey) {
+    lastFaultsKey = faultsKey;
+    const fp = document.getElementById('faultPills');
+    if (faults.length === 0) {
+      fp.innerHTML = '<span class="status-pill st-ok"><span class="status-dot"></span>NO FAULTS</span>';
+    } else {
+      fp.innerHTML = faults.map((f) => {
+        const cls = (f.includes('BROWNOUT') || f.includes('WIRING') || f.includes('WRONG') || f.includes('NO_RESPONSE')) ? 'st-err' : 'st-warn';
+        return `<span class="status-pill ${cls}"><span class="status-dot"></span>${f}</span>`;
+      }).join('');
     }
   }
 
@@ -875,16 +909,25 @@ function renderStatus(d) {
       renderChartInspector();
     }
   }
-  drawChart();
+  if (activeViewName === 'live') {
+    scheduleChartDraw();
+  } else {
+    chartDirty = true;
+  }
   if (window.SolarRig3D) window.SolarRig3D.updateFromStatus(d);
 }
 
 function renderLogs() {
   const box = document.getElementById('logBox');
   if (!box) return;
+  if (activeViewName !== 'debug') {
+    logsDirty = true;
+    return;
+  }
+  logsDirty = false;
   const maxLvl = parseInt(document.getElementById('lvlFilter').value, 10);
   const query = (document.getElementById('logSearch').value || '').toLowerCase();
-  box.innerHTML = '';
+  const frag = document.createDocumentFragment();
   let shown = 0;
   for (const item of allLogs) {
     if (item.lvl > maxLvl) continue;
@@ -894,9 +937,10 @@ function renderLogs() {
     div.textContent = isAdmin
       ? item.txt
       : item.txt.replace(/(wss?:\/\/)?[a-z0-9.-]*emqxsl\.com(:\d+)?(\/\S*)?/gi, '[cloud-broker]');
-    box.appendChild(div);
+    frag.appendChild(div);
     shown++;
   }
+  box.replaceChildren(frag);
   document.getElementById('logCountLabel').textContent = String(shown);
   box.scrollTop = box.scrollHeight;
 }
@@ -1141,13 +1185,31 @@ function handleDirectTelem(j, transportLabel) {
 // View Tabs
 document.querySelectorAll('.nav-tab').forEach((btn) => {
   btn.addEventListener('click', () => {
+    const nextView = btn.dataset.view || 'live';
+    if (nextView === activeViewName) return;
+    activeViewName = nextView;
+
     document.querySelectorAll('.nav-tab').forEach((b) => b.classList.remove('active'));
     document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
     btn.classList.add('active');
-    const target = document.getElementById('view-' + btn.dataset.view);
+    const target = document.getElementById('view-' + nextView);
     if (target) target.classList.add('active');
-    if (btn.dataset.view === 'live') drawChart();
-    if (window.SolarRig3D) window.SolarRig3D.setActiveView(btn.dataset.view);
+
+    if (window.SolarRig3D) window.SolarRig3D.setActiveView(nextView);
+
+    if (nextView === 'live') {
+      chartDirty = false;
+      scheduleChartDraw();
+      if (lastRenderedStatus?.servo) {
+        const srv = lastRenderedStatus.servo;
+        const lightEst = estimateLightSource(lastRenderedStatus.ldr1?.pct || 0, lastRenderedStatus.ldr2?.pct || 0, srv.deg, srv.invert, lastRenderedStatus.light);
+        drawServoGauge(srv.deg, srv.target, lightEst.deg);
+      }
+    } else if (nextView === 'debug' && logsDirty) {
+      renderLogs();
+    } else if (nextView === 'check' && checklistDirty && lastRenderedStatus?.checklist) {
+      renderChecklist(lastRenderedStatus.checklist);
+    }
   });
 });
 
@@ -1694,8 +1756,8 @@ if (chartCanvas) {
         tlPan = tlDragStartPan - dxFrac / (tlZoom - 1) * tlZoom;
         clampTimeline();
       }
-      tlHoverX = canvasXFromClient(e.clientX);
-      drawChart();
+      tlHoverX = e.clientX - rect.left;
+      scheduleChartDraw();
     }
   });
   window.addEventListener('mouseup', (e) => {
@@ -1712,7 +1774,7 @@ if (chartCanvas) {
         const ratio = Math.max(0, Math.min(1, (cx - 40) / plotW));
         tlPinnedIdx = Math.max(startIdx, Math.min(endIdx, Math.round(startIdx + ratio * Math.max(1, endIdx - startIdx))));
         renderChartInspector();
-        drawChart();
+        scheduleChartDraw();
       }
     }
     tlDragging = false;
@@ -1723,21 +1785,21 @@ if (chartCanvas) {
     btnInspClose.addEventListener('click', () => {
       tlPinnedIdx = null;
       renderChartInspector();
-      drawChart();
+      scheduleChartDraw();
     });
   }
 
   chartCanvas.addEventListener('mousemove', (e) => {
     if (!tlDragging) {
       tlHoverX = canvasXFromClient(e.clientX);
-      drawChart();
+      scheduleChartDraw();
     }
   });
   chartCanvas.addEventListener('mouseleave', () => {
-    if (!tlDragging) { tlHoverX = null; drawChart(); }
+    if (!tlDragging) { tlHoverX = null; scheduleChartDraw(); }
   });
   chartCanvas.addEventListener('dblclick', () => {
-    tlZoom = 1; tlPan = 1; clampTimeline(); drawChart();
+    tlZoom = 1; tlPan = 1; clampTimeline(); scheduleChartDraw();
   });
 
   // Touch: 1-finger pan/scrub, 2-finger pinch-zoom
@@ -1751,7 +1813,7 @@ if (chartCanvas) {
       tlDragStartX = e.touches[0].clientX;
       tlDragStartPan = tlPan;
       tlHoverX = canvasXFromClient(e.touches[0].clientX);
-      drawChart();
+      scheduleChartDraw();
     }
   }, { passive: true });
 
@@ -1761,7 +1823,7 @@ if (chartCanvas) {
       const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
       tlZoom = tlPinchStartZoom * (d / tlPinchDist);
       clampTimeline();
-      drawChart();
+      scheduleChartDraw();
     } else if (e.touches.length === 1 && tlDragging) {
       e.preventDefault();
       const rect = chartCanvas.getBoundingClientRect();
@@ -1770,8 +1832,8 @@ if (chartCanvas) {
         tlPan = tlDragStartPan - dxFrac / (tlZoom - 1) * tlZoom;
         clampTimeline();
       }
-      tlHoverX = canvasXFromClient(e.touches[0].clientX);
-      drawChart();
+      tlHoverX = e.touches[0].clientX - rect.left;
+      scheduleChartDraw();
     }
   }, { passive: false });
 
