@@ -75,6 +75,7 @@ jobs:
           mkdir -p docs/vendor/three/examples/jsm/controls
           mkdir -p docs/vendor/three/examples/jsm/environments
           cp node_modules/three/build/three.module.js docs/vendor/three/build/
+          cp node_modules/three/build/three.core.js docs/vendor/three/build/
           cp node_modules/three/examples/jsm/controls/OrbitControls.js docs/vendor/three/examples/jsm/controls/
           cp node_modules/three/examples/jsm/environments/RoomEnvironment.js docs/vendor/three/examples/jsm/environments/
           cp node_modules/three/LICENSE docs/vendor/three/
