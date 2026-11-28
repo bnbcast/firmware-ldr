@@ -188,6 +188,7 @@ function escapeHtml(str) {
 class SolarTrackerDigitalTwin {
   constructor() {
     this.fullMount = document.getElementById('rig3dFullMount');
+    this.loadingEl = document.getElementById('rig3dLoading');
     this.hotspotLayer = document.getElementById('rig3dHotspotLayer');
     this.pinCalloutLayer = document.getElementById('rig3dPinCalloutLayer');
     this.hoverTipEl = document.getElementById('rig3dHoverTip');
@@ -254,7 +255,14 @@ class SolarTrackerDigitalTwin {
     this.contextLost = false;
 
     this.sceneReady = false;
+    this.sceneResourcesReady = false;
     this.sceneBuilding = false;
+    this.sceneWarmed = false;
+    this.hasRenderedScene = false;
+    this.scenePreparationFailed = false;
+    this._sceneResourceToken = 0;
+    this._sceneWarmupFrameId = 0;
+    this._sceneWarmupObjects = null;
     this._idleWarmupId = 0;
     this._idleWarmupIsRic = false;
     this._statusDirty = false;
@@ -341,16 +349,111 @@ class SolarTrackerDigitalTwin {
 
       this.handleResize(true);
       this.stepScene(0.016);
-
-      if (!this.isSoftwareGl && !this.contextLost) {
-        this.renderer.compile(this.scene, this.camera);
-        this.renderer.render(this.scene, this.camera);
-      }
-
+      this.prepareSceneResources();
       this.sceneReady = true;
     } finally {
       this.sceneBuilding = false;
     }
+  }
+
+  prepareSceneResources() {
+    const token = ++this._sceneResourceToken;
+    this.sceneResourcesReady = false;
+    this.scenePreparationFailed = false;
+    this.restoreSceneWarmup();
+
+    const warm = () => {
+      if (token !== this._sceneResourceToken || this.contextLost) return;
+      this.warmSceneResources(token);
+    };
+
+    if (!this.contextLost && typeof this.renderer.compileAsync === 'function') {
+      this.renderer.compileAsync(this.scene, this.camera).then(warm).catch((error) => {
+        if (token !== this._sceneResourceToken || this.contextLost) return;
+        this.failScenePreparation(error);
+      });
+      return;
+    }
+
+    try {
+      if (!this.isSoftwareGl && !this.contextLost) {
+        this.renderer.compile(this.scene, this.camera);
+      }
+      warm();
+    } catch (error) {
+      this.failScenePreparation(error);
+    }
+  }
+
+  warmSceneResources(token) {
+    if (this.sceneWarmed || this.contextLost) return;
+    const objects = [];
+    this.scene.traverseVisible((object) => {
+      if (!object.isMesh || !object.visible || !object.material) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      if (materials.some((material) => material.visible !== false)) objects.push(object);
+    });
+
+    if (objects.length === 0) {
+      this.sceneWarmed = true;
+      this.sceneResourcesReady = true;
+      if (this.slot === 'full') this.wakeRender(120);
+      return;
+    }
+
+    this._sceneWarmupObjects = objects;
+    for (const object of objects) object.visible = false;
+    const batchSize = this.isSoftwareGl ? 12 : 24;
+    let offset = 0;
+
+    const drawNextBatch = () => {
+      this._sceneWarmupFrameId = 0;
+      if (token !== this._sceneResourceToken || this.contextLost) {
+        this.restoreSceneWarmup();
+        return;
+      }
+
+      const end = Math.min(offset + batchSize, objects.length);
+      for (let i = offset; i < end; i++) objects[i].visible = true;
+      try {
+        this.renderer.render(this.scene, this.camera);
+      } catch (error) {
+        this.failScenePreparation(error);
+        return;
+      }
+      for (let i = offset; i < end; i++) objects[i].visible = false;
+
+      offset = end;
+      if (offset < objects.length) {
+        this._sceneWarmupFrameId = requestAnimationFrame(drawNextBatch);
+        return;
+      }
+
+      this.restoreSceneWarmup();
+      this.sceneWarmed = true;
+      this.sceneResourcesReady = true;
+      if (this.slot === 'full') this.wakeRender(120);
+    };
+
+    this._sceneWarmupFrameId = requestAnimationFrame(drawNextBatch);
+  }
+
+  restoreSceneWarmup() {
+    if (this._sceneWarmupFrameId) cancelAnimationFrame(this._sceneWarmupFrameId);
+    this._sceneWarmupFrameId = 0;
+    if (this._sceneWarmupObjects) {
+      for (const object of this._sceneWarmupObjects) object.visible = true;
+    }
+    this._sceneWarmupObjects = null;
+  }
+
+  failScenePreparation(error) {
+    this.restoreSceneWarmup();
+    this.sceneResourcesReady = false;
+    this.scenePreparationFailed = true;
+    this.setLoadingState(false);
+    this.renderFallbackMessage('Gagal menyiapkan rendering 3D. Periksa dukungan WebGL lalu muat ulang halaman.');
+    console.error('Failed to prepare SolarTracker 3D scene.', error);
   }
 
   loadStageHistory() {
@@ -377,6 +480,13 @@ class SolarTrackerDigitalTwin {
     if (this.fullMount) this.fullMount.innerHTML = html;
   }
 
+  setLoadingState(loading) {
+    if (this.loadingEl) this.loadingEl.hidden = !loading;
+    if (this.fullMount) this.fullMount.setAttribute('aria-busy', loading ? 'true' : 'false');
+    const stage = this.fullMount?.closest('.rig3d-stage');
+    if (stage) stage.classList.toggle('is-loading', loading);
+  }
+
   initRenderer() {
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isSoftwareGl,
@@ -387,7 +497,7 @@ class SolarTrackerDigitalTwin {
     this.renderer.toneMappingExposure = 1.08;
     this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = !this.isSoftwareGl;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.className = 'rig3d-canvas';
     if (this.fullMount && this.renderer.domElement.parentNode !== this.fullMount) {
       this.fullMount.appendChild(this.renderer.domElement);
@@ -396,11 +506,20 @@ class SolarTrackerDigitalTwin {
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
       this.contextLost = true;
+      this._sceneResourceToken++;
+      this.restoreSceneWarmup();
+      this.sceneWarmed = false;
+      this.sceneResourcesReady = false;
+      this.hasRenderedScene = false;
+      this.setLoadingState(this.slot === 'full');
       this.stopLoop();
     });
     this.renderer.domElement.addEventListener('webglcontextrestored', () => {
       this.contextLost = false;
-      if (this.slot !== 'hidden') this.wakeRender(400);
+      if (this.slot !== 'hidden') {
+        this.setLoadingState(true);
+      }
+      this.prepareSceneResources();
     });
   }
 
@@ -2321,6 +2440,8 @@ class SolarTrackerDigitalTwin {
     if (viewName === 'twin3d') {
       this.slot = 'full';
       this.cancelIdleWarmup();
+      if (this.scenePreparationFailed) return;
+      this.setLoadingState(!this.hasRenderedScene);
       if (this.fullMount && this.renderer.domElement.parentNode !== this.fullMount) {
         this.fullMount.appendChild(this.renderer.domElement);
       }
@@ -2333,7 +2454,7 @@ class SolarTrackerDigitalTwin {
           if (this.guideArc) this.guideArc.visible = this.lightTestMode;
           this.handleResize(true);
           this.updateProjectedOverlays(true);
-          this.wakeRender(450);
+          this.wakeRender(120);
         });
         return;
       }
@@ -2344,12 +2465,7 @@ class SolarTrackerDigitalTwin {
       }
       this._domRect = null;
       this.handleResize();
-      if (!this.contextLost && this.renderer && this.scene && this.camera) {
-        this.stepScene(0.016);
-        this.renderer.render(this.scene, this.camera);
-        this.updateProjectedOverlays(true);
-      }
-      this.wakeRender(350);
+      this.wakeRender(120);
     } else {
       this.slot = 'hidden';
       this.hideHoverTip();
@@ -2727,13 +2843,13 @@ class SolarTrackerDigitalTwin {
 
   wakeRender(durationMs = 350) {
     this.activeUntilMs = Math.max(this.activeUntilMs, performance.now() + durationMs);
-    if (this.slot === 'full' && this.sceneReady && !this.contextLost && !this.running) {
+    if (this.slot === 'full' && this.sceneReady && this.sceneResourcesReady && !this.contextLost && !this.running) {
       this.startLoop();
     }
   }
 
   startLoop() {
-    if (this.running || this.contextLost || !this.sceneReady || this.slot !== 'full') return;
+    if (this.running || this.contextLost || !this.sceneReady || !this.sceneResourcesReady || this.slot !== 'full') return;
     this.running = true;
     this.lastFrameTime = performance.now();
 
@@ -2750,6 +2866,10 @@ class SolarTrackerDigitalTwin {
       const stillMoving = this.stepScene(dt);
       this.renderer.render(this.scene, this.camera);
       this.updateProjectedOverlays();
+      if (!this.hasRenderedScene) {
+        this.hasRenderedScene = true;
+        this.setLoadingState(false);
+      }
 
       if (stillMoving || now < this.activeUntilMs) {
         if (this.isSoftwareGl) {

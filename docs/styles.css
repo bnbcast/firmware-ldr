@@ -1280,6 +1280,50 @@ body.role-admin .mac-ico {
   text-align: center;
 }
 
+.rig3d-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: #18324d;
+  background: rgba(232, 241, 250, 0.94);
+  text-align: center;
+  pointer-events: none;
+}
+
+.rig3d-loading[hidden] {
+  display: none;
+}
+
+.rig3d-loading > span:last-child {
+  color: #52677d;
+  font-size: 0.84rem;
+}
+
+.rig3d-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(24, 50, 77, 0.16);
+  border-top-color: #1683d8;
+  border-radius: 50%;
+  animation: rig3d-loading-spin 0.8s linear infinite;
+}
+
+@keyframes rig3d-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rig3d-loading-spinner {
+    animation: none;
+  }
+}
+
 /* Full-bleed edge-to-edge stage when Tab 4 Rendering 3D is active.
    Keep #view-twin3d GPU-retained (visibility:hidden instead of display:none) so switching tabs never drops WebGL state. */
 .view-stage:has(#view-twin3d.active) {
@@ -1322,6 +1366,15 @@ body.role-admin .mac-ico {
   overflow: hidden;
   background: #cce0f5;
   user-select: none;
+}
+
+.rig3d-stage.is-loading > :not(.rig3d-full-mount) {
+  pointer-events: none;
+}
+
+.rig3d-stage.is-loading .rig3d-hotspot-layer,
+.rig3d-stage.is-loading .rig3d-pin-callout-layer {
+  visibility: hidden;
 }
 
 .rig3d-full-mount {

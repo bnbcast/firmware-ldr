@@ -6,7 +6,7 @@
   <title>SolarTracker ESP32 Live Monitor</title>
   <link rel="icon" type="image/jpeg" href="./favicon.jpg?v=1">
   <link rel="apple-touch-icon" href="./favicon.jpg?v=1">
-  <link rel="stylesheet" href="./styles.css?v=26">
+  <link rel="stylesheet" href="./styles.css?v=28">
   <script type="importmap">
     {
       "imports": {
@@ -431,7 +431,13 @@
     <!-- ==================== VIEW 4: RENDERING 3D INTERAKTIF ==================== -->
     <section id="view-twin3d" class="view">
       <div class="rig3d-stage">
-        <div id="rig3dFullMount" class="rig3d-full-mount" aria-label="Tampilan Rendering 3D Interaktif SolarTracker"></div>
+        <div id="rig3dFullMount" class="rig3d-full-mount" aria-label="Tampilan Rendering 3D Interaktif SolarTracker">
+          <div id="rig3dLoading" class="rig3d-loading" role="status" aria-live="polite" hidden>
+            <span class="rig3d-loading-spinner" aria-hidden="true"></span>
+            <strong>Menyiapkan rendering 3D</strong>
+            <span>Menyiapkan model dan grafis untuk tampilan pertama...</span>
+          </div>
+        </div>
         <div id="rig3dHotspotLayer" class="rig3d-hotspot-layer"></div>
         <div id="rig3dPinCalloutLayer" class="rig3d-pin-callout-layer" style="display:none"></div>
         <div id="rig3dHoverTip" class="rig3d-hover-tip" style="display:none" aria-hidden="true"></div>
@@ -638,6 +644,6 @@
 
   <script src="https://unpkg.com/mqtt@5.10.3/dist/mqtt.min.js"></script>
   <script src="./app.js?v=30"></script>
-  <script type="module" src="./rig3d.js?v=6"></script>
+  <script type="module" src="./rig3d.js?v=9"></script>
 </body>
 </html>
