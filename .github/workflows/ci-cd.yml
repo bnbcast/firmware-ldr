@@ -1,0 +1,82 @@
+name: CI/CD — Build ESP32 Firmware & Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-firmware:
+    name: Build ESP32 Firmware (PlatformIO)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+
+      - name: Compile ESP32 Firmware (src/main.cpp)
+        run: pio run -e esp32dev
+
+      - name: Upload Compiled Firmware Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-firmware-bin
+          path: |
+            .pio/build/esp32dev/firmware.bin
+            .pio/build/esp32dev/partitions.bin
+            .pio/build/esp32dev/bootloader.bin
+
+  build-pages:
+    name: Package Web UI (./docs)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact (./docs)
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: './docs'
+
+  deploy-pages:
+    name: Deploy Web UI to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build-pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

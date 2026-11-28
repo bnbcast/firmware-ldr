@@ -1,0 +1,6 @@
+.pio/
+.vscode/
+include/secrets.h
+logs/
+*.pyc
+__pycache__/

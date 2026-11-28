@@ -1,0 +1,20 @@
+{
+  "name": "esp32-solar-tracker-bringup",
+  "version": "0.2.0",
+  "description": "Single-file ESP32 LDR/RTC firmware + Bahasa Indonesia Web UI (GitHub Pages & localhost:3000)",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js --mode=dev",
+    "start": "node server.js --mode=dev",
+    "build": "node --check server.js && node --check docs/app.js && node --check docs/rig3d-math.js && node --check docs/rig3d-textures.js && node --check docs/rig3d-model.js && node --check docs/rig3d.js",
+    "lint": "node --check server.js && node --check docs/app.js && node --check docs/rig3d-math.js && node --check docs/rig3d-textures.js && node --check docs/rig3d-model.js && node --check docs/rig3d.js",
+    "prod": "node server.js --mode=prod",
+    "live": "node server.js --mode=prod --no-flash",
+    "build:firmware": "pio run -e esp32dev",
+    "flash": "C:\\Users\\User\\.platformio\\penv\\Scripts\\python.exe scripts/flash_fast.py",
+    "monitor": "pio device monitor -b 115200"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  }
+}

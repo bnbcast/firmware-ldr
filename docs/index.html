@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SolarTracker ESP32 Live Monitor</title>
+  <link rel="icon" type="image/jpeg" href="./favicon.jpg?v=1">
+  <link rel="apple-touch-icon" href="./favicon.jpg?v=1">
+  <link rel="stylesheet" href="./styles.css?v=25">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/build/three.module.js",
+        "three/addons/": "./vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="role-public">
+
+  <!-- macOS FROSTED TITLEBAR (56px) -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="mac-lights" aria-hidden="true">
+        <span class="mac-dot mac-red"></span>
+        <span class="mac-dot mac-yellow"></span>
+        <span class="mac-dot mac-green"></span>
+      </div>
+      <img src="./favicon.jpg?v=1" alt="Logo" class="brand-icon">
+      <strong class="brand-title">SolarTracker</strong>
+      <span id="connPill" class="status-pill st-warn"><span class="status-dot"></span><span id="connText">Menghubungkan...</span></span>
+      <span id="fwPill" class="status-pill st-neutral"><span class="status-dot"></span><span id="fwPillText">--</span></span>
+      <span class="mono chip" id="rtcTopChip">--:--:--</span>
+    </div>
+
+    <!-- 4 MAIN VIEW TABS -->
+    <nav class="nav-tabs" role="tablist">
+      <button class="nav-tab active" data-view="live">1. Monitor &amp; Servo</button>
+      <button class="nav-tab" data-view="debug"><span id="debugTabLabel">2. Serial &amp; Log</span> <span id="faultCountBadge" class="mini-badge" style="display:none">0</span></button>
+      <button class="nav-tab" data-view="check">3. Checklist &amp; Matriks</button>
+      <button class="nav-tab" data-view="twin3d">4. Kembaran 3D</button>
+    </nav>
+
+    <div class="topbar-right">
+      <button id="btnCopyAi" class="btn btn-secondary admin-only">Salin Debug AI</button>
+      <button id="btnAdminAuth" class="btn btn-secondary">Login Admin</button>
+      <button id="btnHeaderFlash" class="btn btn-primary admin-only">Flash ESP32</button>
+    </div>
+  </header>
+
+  <!-- SINGLE-SCREEN 100VH VIEW CONTAINER (ZERO PAGE SCROLL ON DESKTOP) -->
+  <main class="view-stage">
+
+    <!-- ==================== VIEW 1: LIVE MONITOR & SERVO SG90 ==================== -->
+    <section id="view-live" class="view active">
+      <div class="live-grid">
+        <!-- Left Column: LDR1 + LDR2 + Waveform & History Chart -->
+        <div class="col">
+          <div class="sensor-row">
+            <div class="card">
+              <div class="card-head">
+                <span class="label">LDR 1 · GPIO34 (KIRI)</span>
+                <span id="b1" class="status-pill st-warn"><span class="status-dot"></span><span id="b1Text">--</span></span>
+              </div>
+              <div class="big-row">
+                <span class="metric-big" id="p1">--%</span>
+                <span class="mono big-sub" id="raw1">-- / 4095</span>
+              </div>
+              <div class="meter-track"><div id="bar1" class="meter-fill"></div></div>
+              <div class="kv"><span>Tegangan</span><strong class="mono" id="mv1">-- mV</strong></div>
+              <div class="kv"><span>Min / Maks / SD</span><strong class="mono" id="win1">--</strong></div>
+              <div class="kv"><span>Sinyal Sensor</span><strong id="bih1">--</strong></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <span class="label">LDR 2 · GPIO35 (KANAN)</span>
+                <span id="b2" class="status-pill st-warn"><span class="status-dot"></span><span id="b2Text">--</span></span>
+              </div>
+              <div class="big-row">
+                <span class="metric-big" id="p2">--%</span>
+                <span class="mono big-sub" id="raw2">-- / 4095</span>
+              </div>
+              <div class="meter-track"><div id="bar2" class="meter-fill"></div></div>
+              <div class="kv"><span>Tegangan</span><strong class="mono" id="mv2">-- mV</strong></div>
+              <div class="kv"><span>Min / Maks / SD</span><strong class="mono" id="win2">--</strong></div>
+              <div class="kv"><span>Sinyal Sensor</span><strong id="bih2">--</strong></div>
+            </div>
+          </div>
+
+          <div class="card chart-box">
+            <div class="card-head" style="margin-bottom:8px;min-height:30px">
+              <span class="label" id="chartTitleLbl">GRAFIK CAHAYA · LIVE</span>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <div class="chart-range-group" role="group" aria-label="Rentang Grafik">
+                  <button class="range-btn active" data-range="live">Live</button>
+                  <button class="range-btn" data-range="1h">1J</button>
+                  <button class="range-btn" data-range="24h">24J</button>
+                  <button class="range-btn" data-range="7d">7H</button>
+                </div>
+                <div class="chart-range-group" role="group" aria-label="Zoom Timeline">
+                  <button class="range-btn" id="btnZoomOut" title="Zoom Out">−</button>
+                  <button class="range-btn" id="btnZoomReset" title="Reset Zoom">1× </button>
+                  <button class="range-btn" id="btnZoomIn" title="Zoom In">+</button>
+                </div>
+                <span class="mono muted-sm" id="pktChip">0 pkt</span>
+              </div>
+            </div>
+            <div class="chart-canvas-wrap">
+              <canvas id="chart" class="chart-canvas" width="760" height="220"></canvas>
+            </div>
+            <div id="chartInspector" class="chart-inspector" style="display:none">
+              <div class="insp-main">
+                <span class="mono insp-time" id="inspTime">--</span>
+                <span class="mono" id="inspL1">LDR1: --</span>
+                <span class="mono" id="inspL2">LDR2: --</span>
+                <span class="mono" id="inspMeta">Servo: --</span>
+              </div>
+              <button id="btnInspClose" class="insp-close" title="Lepas Pin">×</button>
+            </div>
+          </div>
+
+          <div id="publicSummaryCard" class="card public-summary">
+            <div class="card-head" style="margin-bottom:8px">
+              <span class="label">RINGKASAN PERANGKAT &amp; LINGKUNGAN</span>
+              <span class="status-pill st-neutral public-only"><span class="status-dot" style="background:#007aff"></span><span>Read-Only Publik</span></span>
+            </div>
+            <div class="stat-tiles">
+              <div class="stat-tile">
+                <div class="stat-tile-top">
+                  <span class="mac-ico ico-orange"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M14 14.76V5a2 2 0 0 0-4 0v9.76a4 4 0 1 0 4 0z"/></svg></span>
+                  <span class="stat-tile-lbl">Suhu Chip</span>
+                </div>
+                <strong class="stat-tile-val mono" id="pubTemp">--°C</strong>
+                <span class="stat-tile-sub" id="pubTempSub">Sensor internal</span>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-tile-top">
+                  <span class="mac-ico ico-blue"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg></span>
+                  <span class="stat-tile-lbl">Sinyal WiFi</span>
+                </div>
+                <strong class="stat-tile-val mono" id="pubRssi">-- dBm</strong>
+                <span class="stat-tile-sub" id="pubWifiSub">Menghubungkan...</span>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-tile-top">
+                  <span class="mac-ico ico-indigo"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+                  <span class="stat-tile-lbl">Uptime</span>
+                </div>
+                <strong class="stat-tile-val mono" id="pubUptime">--</strong>
+                <span class="stat-tile-sub" id="pubBootSub">Boot #--</span>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-tile-top">
+                  <span class="mac-ico ico-green"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>
+                  <span class="stat-tile-lbl">Daya</span>
+                </div>
+                <strong class="stat-tile-val mono" id="pubPower">0× BO</strong>
+                <span class="stat-tile-sub" id="pubPowerSub">3V3 Sag 0 mV</span>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-tile-top">
+                  <span class="mac-ico ico-teal"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></span>
+                  <span class="stat-tile-lbl">Servo</span>
+                </div>
+                <strong class="stat-tile-val mono" id="pubMoves">0 step</strong>
+                <span class="stat-tile-sub" id="pubPwmSub">PWM 1500 µs</span>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-tile-top">
+                  <span class="mac-ico ico-amber"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></span>
+                  <span class="stat-tile-lbl">Tracking</span>
+                </div>
+                <strong class="stat-tile-val mono" id="pubTrack">0 dtk</strong>
+                <span class="stat-tile-sub" id="pubSatSub">Gelap/Sat: 0 dtk</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="calCard" class="card admin-only">
+            <div class="card-head" style="margin-bottom:8px">
+              <span class="label">KALIBRASI CEPAT &amp; SUMBER DATA</span>
+              <select id="presetSelect" class="select-pill">
+                <option value="live">LIVE USB (COM4)</option>
+                <option value="normal">Sim: Normal</option>
+                <option value="ldr1_brighter">Sim: LDR1 Terang</option>
+                <option value="ldr2_brighter">Sim: LDR2 Terang</option>
+                <option value="saturated_high">Sim: Mentok 4095</option>
+                <option value="check_wiring">Sim: Cek Kabel</option>
+              </select>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-primary" data-cal="guide">Tes Terpandu (Senter/Tutup)</button>
+              <button class="btn btn-secondary" data-cal="dark">Gelap 0%</button>
+              <button class="btn btn-secondary" data-cal="bright">Terang 100%</button>
+              <button class="btn btn-secondary" data-cal="reset">Reset Cal</button>
+              <button id="btnRtc" class="btn btn-secondary">Sinkron RTC WIB</button>
+              <button id="btnReconnect" class="btn btn-secondary">Reconnect USB</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right Column: Servo MG996R Controller + Diagnosis + Event Log -->
+        <div class="col">
+          <div class="card servo-card">
+            <div class="card-head">
+              <span class="label">SERVO MG996R (METAL GEAR) · PIN P18 (GPIO18)</span>
+              <span id="servoModePill" class="status-pill st-ok"><span class="status-dot"></span><span id="servoModeText">AUTO</span></span>
+            </div>
+
+            <div class="servo-body">
+              <canvas id="servoGauge" width="210" height="122" class="servo-gauge"></canvas>
+              <div class="servo-stats">
+                <div class="metric-big" id="servoDegBig">90°</div>
+                <div class="muted-sm">Target: <strong class="mono" id="servoTargetTxt">90°</strong> · Rentang: <strong class="mono" id="servoRangeTxt">15°–165°</strong> · Trim: <strong class="mono" id="servoTrimTxt">+0°</strong></div>
+                <div class="muted-sm" style="margin-top:4px">Keputusan: <strong id="dec">--</strong> (<span class="mono" id="knDelta">0%</span>)</div>
+                <div class="muted-sm" style="margin-top:4px">Estimasi Cahaya: <strong id="lightVectorTxt">Gelap / Tidak Terdeteksi</strong></div>
+                <div class="muted-sm" style="margin-top:2px;font-size:0.72rem;color:#86868b">*Perkiraan arah &amp; jarak berbasis intensitas LDR (bukan sensor jarak fisik).</div>
+                <div class="muted-sm" style="margin-top:4px">Sudut Jam RTC: <strong class="mono" id="clockTargetTxt">--°</strong></div>
+                <div class="muted-sm" style="margin-top:2px;font-size:0.74rem">Astro NOAA: <strong class="mono" id="astroPhysicsTxt">El --° · Az --° · Eff --%</strong></div>
+                <div class="muted-sm" style="margin-top:4px">Arah Invert: <strong id="servoInvTxt">Tidak</strong> · PWM: <strong id="servoPwmTxt">OFF</strong></div>
+              </div>
+            </div>
+
+            <div class="slider-row admin-only">
+              <span class="mono muted-sm" id="sliderMinLbl">15°</span>
+              <input id="servoSlider" type="range" min="15" max="165" value="90">
+              <span class="mono muted-sm" id="sliderMaxLbl">165°</span>
+            </div>
+
+            <div class="mode-seg-row admin-only">
+              <div class="mac-segmented" role="group" aria-label="Mode Operasi Servo">
+                <button class="seg-btn active" data-srv="auto" data-mode="AUTO" data-tip="Otomatis mengikuti cahaya matahari dari LDR1 & LDR2" title="Otomatis mengikuti cahaya matahari dari LDR1 & LDR2">AUTO (LDR)</button>
+                <button class="seg-btn" data-srv="clock" data-mode="CLOCK" data-tip="Ikuti posisi matahari sesuai jam Tiny RTC & koordinat NOAA (kebal bayangan/awan)" title="Ikuti posisi matahari sesuai jam Tiny RTC & koordinat NOAA">CLOCK (RTC)</button>
+                <button class="seg-btn" data-srv="hybrid" data-mode="HYBRID" data-tip="Dasar sudut jam RTC NOAA + koreksi halus LDR (±Bias) saat matahari cerah" title="Dasar sudut jam RTC NOAA + koreksi halus LDR saat cerah">HYBRID</button>
+                <button class="seg-btn" data-srv="manual" data-mode="MANUAL" data-tip="Atur sudut manual pakai slider untuk uji mekanik & set batas aman" title="Atur sudut manual pakai slider">MANUAL</button>
+              </div>
+              <button class="btn btn-danger-soft" data-srv="stop" data-tip="Matikan sinyal PWM seketika & kunci servo (tombol darurat)" title="Matikan PWM seketika & kunci servo">STOP PWM</button>
+            </div>
+
+            <div class="ctrl-section admin-only">
+              <span class="ctrl-lbl">POSISI &amp; BATAS AMAN</span>
+              <div class="btn-group">
+                <button class="btn btn-secondary" id="btnGoCenter" data-srv="center" data-tip="Gerakkan servo halus ke titik tengah rentang aman" title="Gerakkan servo ke titik tengah">Ke Tengah (90°)</button>
+                <button class="btn btn-secondary" data-srv="setmin" data-tip="Simpan posisi fisik sekarang sebagai batas bawah (awal) aman di NVS" title="Simpan posisi sekarang sebagai batas awal (Min)">Set Awal (Min)</button>
+                <button class="btn btn-secondary" data-srv="setmax" data-tip="Simpan posisi fisik sekarang sebagai batas atas (akhir) aman di NVS" title="Simpan posisi sekarang sebagai batas akhir (Max)">Set Akhir (Max)</button>
+                <button class="btn btn-secondary" id="btnNightPark" data-srv="park" data-tip="Parkir panel sekarang ke posisi malam (otomatis bangun saat pagi)" title="Parkir panel ke posisi malam">Parkir Malam</button>
+                <button class="btn btn-secondary" data-srv="setpark" data-tip="Simpan posisi fisik sekarang sebagai sudut Auto Night-Park di NVS" title="Simpan posisi sekarang sebagai posisi parkir malam">Set Parkir</button>
+                <button class="btn btn-secondary" data-srv="invert" data-tip="Tukar arah gerak servo (kiri↔kanan) jika panel menjauhi cahaya" title="Tukar arah gerak servo">Balik Arah</button>
+              </div>
+            </div>
+
+            <div class="ctrl-section admin-only">
+              <span class="ctrl-lbl">KALIBRASI HALUS</span>
+              <div class="btn-group">
+                <button class="btn btn-secondary" data-srv="setcenter" data-tip="Jadikan posisi fisik sekarang sebagai titik tengah (trim otomatis)" title="Jadikan posisi sekarang sebagai titik tengah">Set Tengah</button>
+                <button class="btn btn-secondary" data-trim="-2" data-tip="Geser offset kalibrasi fisik servo -2 derajat" title="Geser trim -2°">Trim -2°</button>
+                <button class="btn btn-secondary" data-trim="2" data-tip="Geser offset kalibrasi fisik servo +2 derajat" title="Geser trim +2°">Trim +2°</button>
+                <button class="btn btn-secondary" data-srv="resettrim" data-tip="Kembalikan offset trim fisik servo ke 0°" title="Reset trim ke 0°">Reset Trim</button>
+                <button class="btn btn-secondary" data-srv="resetlim" data-tip="Kembalikan rentang batas aman ke bawaan 15°–165°" title="Reset batas aman ke 15°–165°">Reset Batas</button>
+              </div>
+            </div>
+
+            <div class="clock-cfg-bar admin-only">
+              <span class="ctrl-lbl" style="width:100%;margin-bottom:2px">JADWAL RTC &amp; ASTRO NOAA</span>
+              <label class="clk-field" data-tip="Jam matahari terbit (mulai gerak di mode CLOCK/HYBRID)">Terbit <input id="clockStartInp" class="input-pill clk-time" type="time" value="06:00"></label>
+              <label class="clk-field" data-tip="Jam matahari terbenam (masuk Auto Night-Park setelah jam ini)">Terbenam <input id="clockEndInp" class="input-pill clk-time" type="time" value="18:00"></label>
+              <label class="clk-field" data-tip="Batas maksimal koreksi LDR (±derajat) di mode HYBRID">Bias Hybrid
+                <select id="clockBiasInp" class="select-pill clk-bias">
+                  <option value="0">±0°</option>
+                  <option value="5">±5°</option>
+                  <option value="10">±10°</option>
+                  <option value="15" selected>±15°</option>
+                  <option value="25">±25°</option>
+                  <option value="35">±35°</option>
+                </select>
+              </label>
+              <label class="clk-field" data-tip="Deadband Hukum Kosinus Lambert: 4° = 99,76% energi, hemat ~75% baterai servo">Step Cos
+                <select id="cosStepInp" class="select-pill clk-bias">
+                  <option value="1">1°</option>
+                  <option value="2">2°</option>
+                  <option value="4" selected>4°</option>
+                  <option value="6">6°</option>
+                  <option value="8">8°</option>
+                </select>
+              </label>
+              <label class="clk-field" data-tip="Garis lintang lokasi (negatif = Selatan, misal Jakarta -6.20)">Lat <input id="geoLatInp" class="input-pill" style="width:66px;padding:3px 6px;font-size:0.76rem" type="number" step="0.01" value="-6.20"></label>
+              <label class="clk-field" data-tip="Garis bujur lokasi (positif = Timur, misal Jakarta 106.82)">Lon <input id="geoLonInp" class="input-pill" style="width:72px;padding:3px 6px;font-size:0.76rem" type="number" step="0.01" value="106.82"></label>
+              <button id="btnSaveClock" class="btn btn-primary" style="padding:5px 12px;font-size:0.76rem" data-tip="Simpan jadwal RTC & koordinat NOAA permanen ke NVS ESP32">Simpan</button>
+            </div>
+          </div>
+
+          <div class="card diag-card">
+            <div class="card-head" style="margin-bottom:6px">
+              <span class="label">DIAGNOSIS &amp; FAULT REAL-TIME</span>
+              <div id="faultPills" class="fault-pills"></div>
+            </div>
+            <div id="explainText" class="explain-text">Menunggu data dari ESP32...</div>
+            <div id="sunDebugBox" class="sun-debug-box">
+              <div class="sun-debug-top">
+                <span class="label" style="font-size:0.72rem">DEBUG CAHAYA &amp; MATAHARI</span>
+                <span id="sunStatePill" class="status-pill st-neutral"><span class="status-dot"></span><span id="sunStateText">MENUNGGU</span></span>
+              </div>
+              <div id="sunDebugText" class="sun-debug-text">Menunggu pembacaan LDR1 &amp; LDR2...</div>
+              <div id="sunDebugMetrics" class="mono sun-debug-metrics">Lux: -- / -- · Exc: -- / -- · Selisih: -- (Ambang: --)</div>
+            </div>
+            <div id="guideBanner" class="guide-box" style="display:none">
+              <strong>TES TERPANDU:</strong> <span id="guideText"></span>
+            </div>
+            <div class="event-log-wrap">
+              <div class="event-log-head">
+                <span class="label" style="font-size:0.72rem">5 EVENT TERBARU · CAHAYA, ERROR &amp; DAYA (<span id="eventCountLabel">0</span>)</span>
+                <div style="display:flex;gap:4px">
+                  <button id="toggleEventsBtn" class="btn btn-secondary" style="padding:2px 8px;font-size:0.72rem">Semua</button>
+                  <button id="clearEventsBtn" class="btn btn-secondary" style="padding:2px 8px;font-size:0.72rem">Bersihkan</button>
+                </div>
+              </div>
+              <div id="eventLogBox" class="event-log-list"><div class="event-empty">Belum ada event cahaya/error/warning/daya.</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 2: SERIAL LOG & DIAGNOSTICS ==================== -->
+    <section id="view-debug" class="view">
+      <div class="debug-layout">
+        <div class="card debug-toolbar">
+          <div class="btn-group admin-only">
+            <button id="btnCopyAi2" class="btn btn-primary">Salin Debug Bundle untuk AI (JSON)</button>
+            <button id="btnAuditLog" class="btn btn-secondary">Log Login &amp; Audit</button>
+            <button id="btnCsv" class="btn btn-secondary">Unduh CSV (Cloud)</button>
+            <button id="btnJsonl" class="btn btn-secondary">Unduh Blackbox (.jsonl)</button>
+            <button id="btnSelfTest" class="btn btn-secondary">Self-Test 8 Titik</button>
+            <button id="btnWebSerial" class="btn btn-secondary">Web Serial USB</button>
+          </div>
+          <div class="muted-sm mono" id="blackboxLabel">Status Jaringan: --</div>
+        </div>
+
+        <div class="card terminal-full">
+          <div class="card-head" style="margin-bottom:8px">
+            <span class="label">TRACE LOG (<span id="logCountLabel">0</span> baris) · Uptime: <span class="mono" id="uptimeTxt">--</span> · Boot: <span class="mono" id="bootCountTxt">#--</span> · Reset: <span class="mono" id="resetReasonTxt">--</span> · Heap: <span class="mono" id="heapTxt">--</span></span>
+            <div class="btn-group">
+              <input id="logSearch" class="input-pill" style="width:160px" type="text" placeholder="Filter teks log...">
+              <select id="lvlFilter" class="select-pill">
+                <option value="4">TRACE+</option>
+                <option value="3">DEBUG+</option>
+                <option value="2" selected>INFO+</option>
+                <option value="1">WARN+</option>
+                <option value="0">ERROR</option>
+              </select>
+              <button id="pauseBtn" class="btn btn-secondary">Jeda</button>
+              <button id="clearLogBtn" class="btn btn-secondary">Bersihkan</button>
+            </div>
+          </div>
+
+          <div id="logBox" class="log-terminal"></div>
+
+          <div class="cmd-bar admin-only">
+            <input id="serialCmdInput" class="input-pill cmd-input" type="text" placeholder="Ketik perintah (servo auto | servo 90 | cal guide | blackbox | wifi status | mqtt status | selftest)...">
+            <button id="btnSendSerial" class="btn btn-primary">Kirim</button>
+            <button id="btnPingRtt" class="btn btn-secondary">Ping RTT</button>
+            <button class="btn btn-secondary" data-quickcmd="blackbox">Blackbox</button>
+            <button class="btn btn-secondary" data-quickcmd="wifi status">wifi status</button>
+            <button class="btn btn-secondary" data-quickcmd="mqtt status">mqtt status</button>
+            <button class="btn btn-secondary" data-quickcmd="selftest">selftest</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 3: CHECKLIST & PARAMETER MATRIX ==================== -->
+    <section id="view-check" class="view">
+      <div class="check-grid">
+        <div class="col scroll-inner">
+          <div class="card">
+            <div class="card-head" style="margin-bottom:10px">
+              <span class="label">CHECKLIST KESIAPAN HARDWARE (7 TITIK)</span>
+              <span id="checklistSummaryPill" class="status-pill st-warn"><span class="status-dot"></span><span id="checklistPillText">--</span></span>
+            </div>
+            <div id="checklistBox" class="checklist-list"></div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card">
+            <div class="card-head" style="margin-bottom:10px">
+              <span class="label">MATRIKS PARAMETER SENSOR LENGKAP</span>
+              <span class="mono muted-sm" id="lastRxLabel">RX: --</span>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr><th>Parameter</th><th>LDR 1 (GPIO34)</th><th>LDR 2 (GPIO35)</th><th>Target Ideal</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>Raw ADC (12-bit)</td><td class="mono" id="tbRaw1">--</td><td class="mono" id="tbRaw2">--</td><td>180 – 3850</td></tr>
+                  <tr><td>Tegangan AO</td><td class="mono" id="tbMv1">--</td><td class="mono" id="tbMv2">--</td><td>150 – 3100 mV</td></tr>
+                  <tr><td>Level Cahaya</td><td class="mono" id="tbPct1">--</td><td class="mono" id="tbPct2">--</td><td>0 – 100%</td></tr>
+                  <tr><td>Min / Maks (1 dtk)</td><td class="mono" id="tbMinMax1">--</td><td class="mono" id="tbMinMax2">--</td><td>Stabil</td></tr>
+                  <tr><td>Noise (StdDev)</td><td class="mono" id="tbSd1">--</td><td class="mono" id="tbSd2">--</td><td>&lt; 25 Stabil</td></tr>
+                  <tr><td>Kalibrasi NVS</td><td class="mono" id="tbCal1">--</td><td class="mono" id="tbCal2">--</td><td>Gelap .. Terang</td></tr>
+                  <tr><td>Min/Maks Sesi Ini</td><td class="mono" id="tbSess1">--</td><td class="mono" id="tbSess2">--</td><td>Rentang Tes</td></tr>
+                  <tr><td>Status Health</td><td class="mono" id="tbHealth1">--</td><td class="mono" id="tbHealth2">--</td><td>OK</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card hw-info-card">
+            <div class="card-head" style="margin-bottom:8px">
+              <span class="label">INFO HARDWARE &amp; PANDUAN PIN LENGKAP (MG996R)</span>
+            </div>
+            <div class="hw-kv-list">
+              <div class="kv"><span>ESP32 &amp; Expansion</span><strong class="mono">NodeMCU-32S (38-Pin) + GOOUUU V4 (3.3V) · Daya via USB-C 5V (GOOUUU)</strong></div>
+              <div class="kv"><span>LDR 1 &amp; LDR 2</span><strong class="mono">AO → GPIO34 &amp; GPIO35 · VCC = 3.3V · GND = ESP32 (DO Kosong)</strong></div>
+              <div class="kv"><span>Servo MG996R</span><strong class="mono">PWM → GPIO18 (P18) · VCC = 6V (XL4015) · Common GND (3 Kabel)</strong></div>
+              <div class="kv"><span>RTC I2C &amp; EEPROM</span><strong class="mono" id="metaI2c">SDA=21 · SCL=22 · 0x68 · Err 0</strong></div>
+              <div class="kv"><span>Sistem Energi</span><strong class="mono">Panel Monokristalin → Watt Meter → SCC PWM → Aki INCOE 12V</strong></div>
+              <div class="kv"><span>WiFi &amp; MQTT</span><strong class="mono" id="metaWifi">--</strong></div>
+              <div class="kv"><span>Uptime / Suhu / Loop</span><strong class="mono" id="metaUptime">--</strong></div>
+              <div class="kv"><span>Kelistrikan &amp; EMI</span><strong class="mono" id="metaPower">--</strong></div>
+              <div class="kv"><span>Reset &amp; Brownout</span><strong class="mono" id="brownoutTxt">0</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 4: KEMBARAN DIGITAL 3D ==================== -->
+    <section id="view-twin3d" class="view">
+      <div class="rig3d-stage">
+        <div id="rig3dFullMount" class="rig3d-full-mount" aria-label="Tampilan 3D Interaktif SolarTracker"></div>
+        <div id="rig3dHotspotLayer" class="rig3d-hotspot-layer"></div>
+        <div id="rig3dPinCalloutLayer" class="rig3d-pin-callout-layer" style="display:none"></div>
+        <div id="rig3dHoverTip" class="rig3d-hover-tip" style="display:none" aria-hidden="true"></div>
+
+        <!-- Top-left minimal telemetry HUD (zero backdrop-filter over WebGL) -->
+        <div class="rig3d-hud-top">
+          <div class="rig3d-hud-title">Kembaran Digital 3D · SolarTracker</div>
+          <div id="rig3dHudTelemetry" class="rig3d-hud-sub mono">Menghubungkan telemetri...</div>
+          <div id="rig3dDragHint" class="rig3d-hud-hint">Seret kiri = Putar bebas · Seret kanan = Geser · Scroll = Zoom · W/S / Shift+Scroll = Maju/Mundur · Q/E/↑↓ = Naik/Turun</div>
+        </div>
+
+        <!-- Compact Floating Freeform Camera Nav Pad (Maju/Mundur, Geser, Naik/Turun, Zoom, Reset) -->
+        <div id="rig3dNavPad" class="rig3d-nav-pad" role="group" aria-label="Navigasi Kamera Freeform 3D">
+          <button id="btnCamFwd" class="nav-pad-btn nav-pad-wide" data-cam-hold="fwd" type="button" title="Maju Freeform (W / Shift+Scroll Atas)" aria-label="Maju Kamera">Maju</button>
+          <button id="btnCamBack" class="nav-pad-btn nav-pad-wide" data-cam-hold="back" type="button" title="Mundur Freeform (S / Shift+Scroll Bawah)" aria-label="Mundur Kamera">Mundur</button>
+          <span class="nav-pad-sep" aria-hidden="true"></span>
+          <button id="btnCamLeft" class="nav-pad-btn" data-cam-hold="left" type="button" title="Geser Kiri (A / ←)" aria-label="Geser Kamera Kiri">←</button>
+          <button id="btnCamRight" class="nav-pad-btn" data-cam-hold="right" type="button" title="Geser Kanan (D / →)" aria-label="Geser Kamera Kanan">→</button>
+          <button id="btnCamPanUp" class="nav-pad-btn" data-cam-hold="up" type="button" title="Naik / Atas (E / ↑)" aria-label="Geser Kamera ke Atas">↑</button>
+          <button id="btnCamPanDown" class="nav-pad-btn" data-cam-hold="down" type="button" title="Turun / Bawah (Q / ↓)" aria-label="Geser Kamera ke Bawah">↓</button>
+          <span class="nav-pad-sep" aria-hidden="true"></span>
+          <button id="btnCamZoomIn" class="nav-pad-btn" type="button" title="Zoom In (+)" aria-label="Perbesar Kamera">+</button>
+          <button id="btnCamZoomOut" class="nav-pad-btn" type="button" title="Zoom Out (−)" aria-label="Perkecil Kamera">−</button>
+          <span class="nav-pad-sep" aria-hidden="true"></span>
+          <button id="btnCamReset" class="nav-pad-btn" type="button" title="Reset Sudut Kamera" aria-label="Reset Kamera">⟲</button>
+        </div>
+
+        <!-- Bottom-left easy-to-read Pin / Wire / Component Inspector Card -->
+        <div id="rig3dInspector" class="rig3d-inspector" style="display:none" role="region" aria-label="Inspeksi Pin dan Kabel 3D">
+          <div class="rig3d-insp-body">
+            <div class="rig3d-insp-head-row">
+              <span id="rig3dInspBadge" class="rig3d-insp-badge">KABEL</span>
+              <span id="rig3dInspVolt" class="rig3d-insp-volt mono" style="display:none">--</span>
+            </div>
+            <div id="rig3dInspTitle" class="rig3d-insp-title">--</div>
+            <div id="rig3dInspRoute" class="rig3d-insp-route" style="display:none"></div>
+            <div id="rig3dInspMetrics" class="rig3d-insp-metrics mono" style="display:none">--</div>
+            <div id="rig3dInspWiring" class="rig3d-insp-wiring">--</div>
+          </div>
+          <button id="btnRig3dInspClose" class="rig3d-insp-close" type="button" title="Tutup Inspeksi (Esc)" aria-label="Tutup Inspeksi">×</button>
+        </div>
+
+        <!-- Reopen trigger when right-side control panel is collapsed -->
+        <button id="btnSidePanelReopen" class="rig3d-side-reopen" type="button" style="display:none" aria-label="Tampilkan Panel Kontrol 3D">☰ Kontrol 3D (H)</button>
+
+        <!-- Collapsible Right-Side Control Panel (zero obstruction on tall front-stacked rig!) -->
+        <aside id="rig3dSidePanel" class="rig3d-side-panel" aria-label="Panel Kontrol Kembaran 3D">
+          <div class="side-panel-head">
+            <span class="side-panel-title">Kontrol 3D</span>
+            <button id="btnSidePanelToggle" class="side-collapse-btn" type="button" aria-expanded="true" title="Sembunyikan Panel (H)">Sembunyikan ›</button>
+          </div>
+
+          <div class="side-panel-scroll">
+            <div class="side-section">
+              <div class="side-section-lbl">KAMERA CEPAT</div>
+              <div class="side-cam-grid" role="group" aria-label="Preset Kamera 3D">
+                <button class="dock-btn active" type="button" data-3d-cam="overview">Seluruh Rig</button>
+                <button class="dock-btn" type="button" data-3d-cam="front">Depan Stack</button>
+                <button class="dock-btn" type="button" data-3d-cam="watt_scc">Watt &amp; SCC</button>
+                <button class="dock-btn" type="button" data-3d-cam="xl4015">XL4015 Merah</button>
+                <button class="dock-btn" type="button" data-3d-cam="breadboard">Breadboard GND</button>
+                <button class="dock-btn" type="button" data-3d-cam="esp_pins">Pin ESP32</button>
+                <button class="dock-btn" type="button" data-3d-cam="tiny_rtc">Tiny RTC</button>
+                <button class="dock-btn" type="button" data-3d-cam="ldr">Sekat LDR</button>
+                <button class="dock-btn" type="button" data-3d-cam="rear">Servo MG996R</button>
+                <button class="dock-btn side-span-2" type="button" data-3d-cam="power">Aki INCOE 12V</button>
+              </div>
+            </div>
+
+            <div class="side-section">
+              <div class="side-section-lbl">INSPEKSI PIN &amp; KABEL</div>
+              <div class="side-cam-grid">
+                <button id="btnToggleWiring" class="dock-btn" type="button">Sorot Kabel</button>
+                <button id="btnTogglePinLabels" class="dock-btn" type="button">Label Pin</button>
+                <button id="btnToggleHotspots" class="dock-btn active" type="button">Pin Komponen</button>
+                <button id="btnResetSelection" class="dock-btn" type="button">Reset Pilihan</button>
+              </div>
+              <div class="side-tip-note">Tip: Klik langsung kabel atau ujung pin mana saja di 3D untuk melihat jalur <strong>Dari → Ke</strong>.</div>
+            </div>
+
+            <div class="side-section">
+              <div class="side-section-lbl">FILTER JALUR KABEL</div>
+              <div id="rig3dWiringLegend" class="side-wire-list" aria-label="Filter Jalur Kabel Pin-ke-Pin">
+                <button type="button" class="wire-chip active" data-wire-net="">Semua Kabel</button>
+                <button type="button" class="wire-chip" data-wire-net="gnd"><span class="wire-dot" style="background:#00d4ff"></span>Common GND (3 Kabel)</button>
+                <button type="button" class="wire-chip" data-wire-net="pv"><span class="wire-dot" style="background:#ff3b30"></span>Panel → Watt → SCC</button>
+                <button type="button" class="wire-chip" data-wire-net="bat"><span class="wire-dot" style="background:#ef4444"></span>Aki 12V ↔ SCC</button>
+                <button type="button" class="wire-chip" data-wire-net="buck12v"><span class="wire-dot" style="background:#ff5722"></span>SCC LOAD 12V → XL4015</button>
+                <button type="button" class="wire-chip" data-wire-net="servo6v"><span class="wire-dot" style="background:#ff69b4"></span>XL4015 6V → Servo Merah</button>
+                <button type="button" class="wire-chip" data-wire-net="pwm"><span class="wire-dot" style="background:#ff9f0a"></span>GPIO18 → Servo Oranye</button>
+                <button type="button" class="wire-chip" data-wire-net="i2c"><span class="wire-dot" style="background:#2ecc71"></span>Tiny RTC ↔ ESP32</button>
+                <button type="button" class="wire-chip" data-wire-net="ldr"><span class="wire-dot" style="background:#a855f7"></span>LDR 1 &amp; 2 ↔ ESP32</button>
+                <button type="button" class="wire-chip" data-wire-net="usb"><span class="wire-dot" style="background:#94a3b8"></span>USB-C 5V → GOOUUU V4</button>
+              </div>
+            </div>
+
+            <div class="side-section">
+              <div class="side-section-lbl">LINGKUNGAN</div>
+              <div class="side-seg-2" role="group" aria-label="Lingkungan">
+                <button class="dock-btn active" type="button" data-3d-env="outdoor">Luar Ruangan</button>
+                <button class="dock-btn" type="button" data-3d-env="workshop">Studio Bengkel</button>
+              </div>
+            </div>
+
+            <div class="side-section">
+              <div class="side-section-lbl">MODE CAHAYA &amp; UJI SENTER</div>
+              <div class="side-seg-2" role="group" aria-label="Mode Cahaya">
+                <button class="dock-btn active" type="button" data-3d-lightmode="live">Data Nyata</button>
+                <button class="dock-btn" type="button" data-3d-lightmode="test">Uji Senter</button>
+              </div>
+              <div id="rig3dLightSliderWrap" class="rig3d-light-slider-wrap" style="display:none">
+                <span class="dock-mini-lbl">Kiri</span>
+                <input id="rig3dLightSlider" type="range" min="12" max="168" value="90" aria-label="Sudut Cahaya 3D">
+                <span class="dock-mini-lbl">Kanan</span>
+                <span id="rig3dLightDegVal" class="mono dock-deg-val">90°</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ADMIN LOGIN MODAL (Verified via Cloudflare Workers) -->
+  <div id="adminModal" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="card-head" style="margin-bottom:10px">
+        <span class="label">LOGIN ADMIN · KONTROL &amp; DIAGNOSTIK</span>
+      </div>
+      <div id="adminLoginErr" class="login-err"></div>
+      <div class="modal-field">
+        <label>Username</label>
+        <input id="adminUserInp" class="input-pill" type="text" placeholder="username admin" autocomplete="username">
+      </div>
+      <div class="modal-field">
+        <label>Password</label>
+        <input id="adminPassInp" class="input-pill" type="password" placeholder="password" autocomplete="current-password">
+      </div>
+      <div class="muted-sm" style="margin-bottom:12px">Diverifikasi aman oleh Cloudflare Workers. Pengunjung tanpa login hanya dapat melihat data secara <em>read-only</em>.</div>
+      <div class="btn-group">
+        <button id="btnAdminSubmit" class="btn btn-primary">Masuk</button>
+        <button id="btnAdminCancel" class="btn btn-secondary">Batal</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/mqtt@5.10.3/dist/mqtt.min.js"></script>
+  <script src="./app.js?v=30"></script>
+  <script type="module" src="./rig3d.js?v=5"></script>
+</body>
+</html>
