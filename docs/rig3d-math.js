@@ -172,6 +172,21 @@ export function computeElectricalEstimate(status, panelTiltRad, lightPos, panelC
   const xl4015OutV = Number((servoActive ? 5.92 : 6.02).toFixed(2));
   const xl4015OutA = Number((servoActive ? 0.85 : 0.05).toFixed(2));
 
+  // INA219 High-Side Sensor between SCC LOAD+ and XL4015 IN+ (measures 12V input side via R100 0.1 ohm shunt)
+  const buckEfficiency = 0.87;
+  const ina219BusV = xl4015InV;
+  const ina219CurrentA = Number(((xl4015OutV * xl4015OutA) / (buckEfficiency * Math.max(10.0, ina219BusV))).toFixed(2));
+  const ina219PowerW = Number((ina219BusV * ina219CurrentA).toFixed(2));
+  const ina219ShuntMv = Number((ina219CurrentA * 100).toFixed(1));
+
+  // QF-M6001-2 5V Boost UPS + Dual 18650 Parallel Bank powering ESP32 GOOUUU V4
+  const sagMv = Number(status?.pwr?.sagMv || 0);
+  const upsInV = Number((5.02 - sagMv * 0.0005).toFixed(2));
+  const upsBattV = Number((4.16 - sagMv * 0.0004).toFixed(2));
+  const upsOutV = Number((5.04 - sagMv * 0.0003).toFixed(2));
+  const upsSocPct = clamp(Math.round(((upsBattV - 3.2) / (4.2 - 3.2)) * 100), 15, 100);
+  const upsCharging = upsInV >= 4.65;
+
   return {
     estimated: true,
     charging: sunOk && !parked && currentAmp >= 0.12,
@@ -184,6 +199,15 @@ export function computeElectricalEstimate(status, panelTiltRad, lightPos, panelC
     xl4015InV,
     xl4015OutV,
     xl4015OutA,
+    ina219BusV,
+    ina219CurrentA,
+    ina219PowerW,
+    ina219ShuntMv,
+    upsInV,
+    upsBattV,
+    upsOutV,
+    upsSocPct,
+    upsCharging,
     servoActive
   };
 }

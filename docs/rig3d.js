@@ -27,10 +27,12 @@ const CAMERA_PRESETS = {
   overview:   { pos: [1.30, 1.86, 2.48],   target: [0.06, 0.80, 0.06] },
   front:      { pos: [0.08, 1.12, 2.32],   target: [0.05, 0.94, 0.06] },
   watt_scc:   { pos: [0.04, 1.02, 0.62],   target: [0.02, 1.00, 0.05] },
+  ina219:     { pos: [-0.306, 0.782, 0.218], target: [-0.306, 0.623, 0.118] },
   xl4015:     { pos: [-0.215, 0.80, 0.25], target: [-0.215, 0.625, 0.118] },
   breadboard: { pos: [-0.042, 0.80, 0.26], target: [-0.042, 0.625, 0.126] },
   esp_pins:   { pos: [0.165, 0.78, 0.24],  target: [0.160, 0.628, 0.118] },
   tiny_rtc:   { pos: [0.308, 0.75, 0.195], target: [0.305, 0.628, 0.118] },
+  ups:        { pos: [0.422, 0.758, 0.292], target: [0.448, 0.630, 0.119] },
   ldr:        { pos: [-0.43, 0.81, 0.29],  target: [-0.43, 0.635, 0.115] },
   rear:       { pos: [0.36, 1.28, -0.76],  target: [0.02, 1.20, -0.03] },
   power:      { pos: [-0.56, 0.44, 0.90],  target: [-0.14, 0.30, -0.04] }
@@ -39,8 +41,10 @@ const CAMERA_PRESETS = {
 const MACRO_PRESET_GROUPS = {
   esp_pins: 'esp',
   tiny_rtc: 'esp',
+  ina219: 'ina219',
   breadboard: 'breadboard',
   xl4015: 'xl4015',
+  ups: 'ups',
   ldr: 'ldr',
   watt_scc: 'watt_scc'
 };
@@ -59,27 +63,37 @@ const HOTSPOT_META = {
   scc: {
     title: 'Solar Charge Controller PWM Biru',
     preset: 'watt_scc',
-    wiring: 'Posisi depan tengah (di bawah Watt Meter): +PV− (dari Watt Meter) · +BAT− (Aki INCOE 12V) · +LOAD− (12V ke XL4015)'
+    wiring: 'Posisi depan tengah (di bawah Watt Meter): +PV− (dari Watt Meter) · +BAT− (Aki INCOE 12V) · LOAD+ → INA219 VIN+ · LOAD− → XL4015 IN−'
+  },
+  ina219: {
+    title: 'INA219 DC Current/Voltage Sensor (0x40)',
+    preset: 'ina219',
+    wiring: 'Jalur ukur 12V: SCC LOAD+ → VIN+ → Shunt R100 (0.1Ω) → VIN− → XL4015 IN+. Suplai & I2C: VCC→3.3V · GND→Common GND · SDA→GPIO21 · SCL→GPIO22.'
   },
   xl4015: {
     title: 'XL4015 CC/CV 5A (Merah)',
     preset: 'xl4015',
-    wiring: 'IN+/IN− dari SCC LOAD (12V) → atur 6V → OUT+ ke Servo Merah, OUT− ke Breadboard Common GND. Jangan sambung 6V ke ESP32!'
+    wiring: 'IN+ dari INA219 VIN− (12V), IN− dari SCC LOAD− → atur 6V → OUT+ ke Servo Merah, OUT− ke Breadboard Common GND. Jangan sambung 6V ke ESP32!'
   },
   breadboard: {
-    title: 'Breadboard Common GND (3 Kabel)',
+    title: 'Breadboard Common GND (4 Kabel)',
     preset: 'breadboard',
-    wiring: 'Hanya menyatukan 3 kabel GND: XL4015 OUT−, Servo MG996R (cokelat), dan ESP32 GND.'
+    wiring: 'Menyatukan 4 kabel GND: INA219 GND, XL4015 OUT−, Servo MG996R (cokelat), dan ESP32 GND.'
   },
   esp32: {
     title: 'ESP32 NodeMCU-32S + GOOUUU V4',
     preset: 'esp_pins',
-    wiring: 'LDR 1 & 2 (AO, 3.3V, GND) dan Tiny RTC (SDA, SCL, 3.3V, GND) nyambung langsung ke ESP32. GPIO18 → Servo Oranye, GND → Breadboard.'
+    wiring: 'Suplai 5V uninterrupted dari UPS QF-M6001-2 (UPS+/UPS− → 5V/GND). LDR 1 & 2, Tiny RTC, INA219 nyambung ke ESP32; GPIO18 → Servo Oranye; USB5V kosong.'
   },
   rtc: {
     title: 'Tiny RTC HW-111 (DS1307 + AT24C32)',
     preset: 'tiny_rtc',
     wiring: 'Nyambung langsung ke ESP32: SCL→GPIO22, SDA→GPIO21, VCC→3.3V, GND→ESP32 GND (SQ/DS/BAT kosong).'
+  },
+  ups: {
+    title: 'UPS 5V QF-M6001-2 (2×18650)',
+    preset: 'ups',
+    wiring: 'USB-C 5V IN → Charger U1 (TP4056) & 2×18650 paralel (Proteksi U2/U3 DW01+8205) → Boost 2R2 / U4 (FP6298) + 3× SS54 + 4× 220µF 16V → UPS+ (5V) / UPS− (GND) → ESP32 5V/GND.'
   },
   ldr: {
     title: 'LDR 1 & LDR 2 + Sekat Hitam',
@@ -651,10 +665,12 @@ class SolarTrackerDigitalTwin {
       panel: 'Panel Surya',
       wattmeter: 'Watt Meter',
       scc: 'Charge Ctrl',
+      ina219: 'INA219 (12V)',
       xl4015: 'XL4015 Merah',
       breadboard: 'Breadboard GND',
       esp32: 'ESP32 + GOOUUU',
       rtc: 'Tiny RTC',
+      ups: 'UPS 5V (2×18650)',
       ldr: 'Sekat LDR',
       servo: 'Servo MG996R',
       battery: 'Aki INCOE'
@@ -1341,8 +1357,10 @@ class SolarTrackerDigitalTwin {
       metrics = `MG996R · Mode: ${s.locked ? 'SAFE-LOCK' : s.mode} · Sudut: ${s.deg}° (Target ${s.target}°) · Suplai XL4015: ${e.xl4015OutV.toFixed(2)} V / ${e.xl4015OutA.toFixed(2)} A`;
     } else if (this.selectedHotspot === 'wattmeter') {
       metrics = `Tegangan Panel (Est.): ${e.panelVoltage.toFixed(2)} V · Arus (Est.): ${e.currentAmp.toFixed(2)} A · Daya: ${e.watts.toFixed(1)} W`;
+    } else if (this.selectedHotspot === 'ina219') {
+      metrics = `Bus 12V: ${e.ina219BusV.toFixed(2)} V · Arus Input XL4015: ${e.ina219CurrentA.toFixed(2)} A · Daya: ${e.ina219PowerW.toFixed(2)} W · Shunt R100: ${e.ina219ShuntMv.toFixed(1)} mV (0x40)`;
     } else if (this.selectedHotspot === 'breadboard') {
-      metrics = '3 kabel Common GND: XL4015 OUT− · Servo MG996R (Cokelat) · ESP32 GND';
+      metrics = '4 kabel Common GND: INA219 GND · XL4015 OUT− · Servo MG996R (Cokelat) · ESP32 GND';
     } else if (this.selectedHotspot === 'esp32') {
       const fw = d?.firmwareVersion || '--';
       const rssi = d?.wifi?.ok ? `${d.wifi.rssi} dBm` : 'USB / Sim';
@@ -1356,11 +1374,13 @@ class SolarTrackerDigitalTwin {
       metrics = `Waktu RTC: ${rtcTime} · Status: ${rtcState} · ${eep} · I2C Err: ${d?.i2cErr ?? 0}`;
     } else if (this.selectedHotspot === 'xl4015') {
       const loadLbl = e.servoActive ? 'Aktif menggerakkan MG996R' : 'Siaga (Idle)';
-      metrics = `IN (LOAD SCC): ${e.xl4015InV.toFixed(1)} V → OUT (MG996R): ${e.xl4015OutV.toFixed(2)} V · Arus Est.: ${e.xl4015OutA.toFixed(2)} A (${loadLbl})`;
+      metrics = `IN (via INA219): ${e.xl4015InV.toFixed(1)} V → OUT (MG996R): ${e.xl4015OutV.toFixed(2)} V · Arus Est.: ${e.xl4015OutA.toFixed(2)} A (${loadLbl})`;
     } else if (this.selectedHotspot === 'scc') {
-      metrics = `Tegangan Aki (Est.): ${e.batteryVoltage.toFixed(1)} V · Status: ${e.charging ? 'Mengisi dari Panel' : 'Siaga / Gelap'} · LOAD 12V → XL4015`;
+      metrics = `Tegangan Aki (Est.): ${e.batteryVoltage.toFixed(1)} V · Status: ${e.charging ? 'Mengisi dari Panel' : 'Siaga / Gelap'} · LOAD 12V → INA219 → XL4015`;
     } else if (this.selectedHotspot === 'battery') {
       metrics = `INCOE SA-20 12V 22Ah · Tegangan Est.: ${e.batteryVoltage.toFixed(1)} V (${e.batterySoc}%) · 3V3 Sag: ${d?.pwr?.sagMv ?? 0} mV`;
+    } else if (this.selectedHotspot === 'ups') {
+      metrics = `IN USB-C: ${e.upsInV.toFixed(2)} V · Baterai 2×18650 (Paralel): ${e.upsBattV.toFixed(2)} V (${e.upsSocPct}%) · OUT Boost (U4/2R2): ${e.upsOutV.toFixed(2)} V → ESP32 (${e.upsCharging ? 'Mengisi & Backup' : 'Mode Baterai'})`;
     }
 
     this.renderInspectorCard({

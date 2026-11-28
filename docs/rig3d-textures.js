@@ -5,7 +5,10 @@ import {
   GOOUUU_FRONT_PINS,
   GOOUUU_REAR_PINS,
   TINY_RTC_PINS,
-  LM393_PINS
+  LM393_PINS,
+  INA219_PINS,
+  INA219_GEO,
+  UPS_GEO
 } from './rig3d-wiring.js';
 
 function finalizeColorTex(canvas, anisotropy, repeatX = 1, repeatY = 1) {
@@ -2066,7 +2069,7 @@ export function createBreadboardTexture(anisotropy) {
       // Crisp silkscreen caption tucked cleanly into the front white margin below the blue stripe
       ctx.fillStyle = '#1d4ed8';
       ctx.font = '800 20px "JetBrains Mono", monospace';
-      ctx.fillText('COMMON GND (−) · XL4015 OUT− · SERVO MG996R · ESP32', w * 0.5, yBlue + 24);
+      ctx.fillText('COMMON GND (−) · XL4015 · SERVO · ESP32 · INA219', w * 0.5, yBlue + 24);
     }
   };
 
@@ -2123,3 +2126,482 @@ export function createMg996rLabelTexture(anisotropy) {
 
   return finalizeColorTex(c, anisotropy);
 }
+
+/**
+ * 1024x896 Authentic Royal-Blue INA219 I2C High-Side DC Current/Voltage Sensor PCB:
+ *  - Rear (-Z): 2-pin screw terminal footprint + VIN+ / VIN− silkscreen & mounting holes
+ *  - Upper-mid: Heavy copper Kelvin shunt traces routing VIN+/VIN− to R100 (0.1Ω 2512 shunt)
+ *  - Center: U1 INA219A SOT-23-8 pads, R1/R2 (10k I2C pull-ups), C1 bypass cap, PWR LED + R3
+ *  - Right: A0 / A1 I2C address solder jumper pads + 0x40 legend
+ *  - Front (+Z): 6-pin gold header pads & crisp silkscreen aligned 1:1 with INA219_GEO
+ */
+export function createIna219Texture(anisotropy) {
+  const w = 1024;
+  const h = 896;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+
+  const pcbW = INA219_GEO.width;
+  const pcbD = INA219_GEO.depth;
+  const pxX = (xm) => ((xm + pcbW * 0.5) / pcbW) * w;
+  const pyZ = (zm) => ((zm + pcbD * 0.5) / pcbD) * h;
+
+  // Royal-blue glossy INA219 soldermask
+  const bg = ctx.createLinearGradient(0, 0, w, h);
+  bg.addColorStop(0, '#0f3f7a');
+  bg.addColorStop(0.5, '#15549e');
+  bg.addColorStop(1, '#0d3669');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  // Subtle hatched copper ground plane & inner silkscreen border
+  ctx.strokeStyle = 'rgba(56, 152, 236, 0.28)';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(18, 18, w - 36, h - 36);
+
+  // Heavy high-current copper traces (12V path: VIN+ -> R100 left, R100 right -> VIN-)
+  ctx.strokeStyle = 'rgba(59, 165, 245, 0.45)';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 24;
+  ctx.beginPath();
+  ctx.moveTo(pxX(-0.0068), pyZ(-0.0165));
+  ctx.lineTo(pxX(-0.0068), pyZ(-0.0045));
+  ctx.lineTo(pxX(-0.0055), pyZ(-0.0045));
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(pxX(0.0068), pyZ(-0.0165));
+  ctx.lineTo(pxX(0.0068), pyZ(-0.0045));
+  ctx.lineTo(pxX(0.0055), pyZ(-0.0045));
+  ctx.stroke();
+
+  // Kelvin sense lines from R100 to INA219A IC
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(96, 186, 250, 0.55)';
+  ctx.beginPath();
+  ctx.moveTo(pxX(-0.0055), pyZ(-0.0020));
+  ctx.lineTo(pxX(-0.0065), pyZ(0.0045));
+  ctx.moveTo(pxX(0.0055), pyZ(-0.0020));
+  ctx.lineTo(pxX(0.0010), pyZ(0.0032));
+  ctx.lineTo(pxX(-0.0040), pyZ(0.0045));
+  ctx.stroke();
+
+  // I2C & power traces to front 6-pin header
+  for (let i = 0; i < 6; i++) {
+    const hx = pxX((i - 2.5) * INA219_GEO.headerPitch);
+    const hy = pyZ(INA219_GEO.headerZ);
+    ctx.beginPath();
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(hx, pyZ(0.0125));
+    ctx.stroke();
+  }
+
+  // Plated mounting holes helper
+  const drawPlatedHole = (cx, cy, rOuter, rInner) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, rOuter, 0, Math.PI * 2);
+    ctx.fillStyle = '#d4dde8';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
+  };
+
+  // Top-left & top-right plated mounting holes flanking screw terminal block
+  drawPlatedHole(pxX(-0.0225), pyZ(-0.0185), 34, 21);
+  drawPlatedHole(pxX(0.0225),  pyZ(-0.0185), 34, 21);
+
+  // Rear screw terminal white silkscreen outline & labels
+  ctx.strokeStyle = '#f8fafc';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(
+    pxX(-0.0138), pyZ(-0.0235),
+    pxX(0.0138) - pxX(-0.0138), pyZ(-0.0095) - pyZ(-0.0235)
+  );
+  ctx.fillStyle = '#fef08a';
+  ctx.font = '800 26px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('VIN+', pxX(-0.0108), pyZ(-0.0068));
+  ctx.fillText('VIN−', pxX(0.0108),  pyZ(-0.0068));
+
+  // Top board identification silkscreen
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 25px "JetBrains Mono", monospace';
+  ctx.fillText('INA219', pxX(-0.0205), pyZ(-0.0105));
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = '700 16px "JetBrains Mono", monospace';
+  ctx.fillText('0-26V', pxX(0.0205), pyZ(-0.0105));
+
+  // R100 (0.1Ω 2512 shunt) white silkscreen box & silver solder pads
+  ctx.strokeStyle = 'rgba(248, 250, 252, 0.90)';
+  ctx.lineWidth = 3.5;
+  ctx.strokeRect(
+    pxX(-0.0072), pyZ(-0.0082),
+    pxX(0.0072) - pxX(-0.0072), pyZ(-0.0008) - pyZ(-0.0082)
+  );
+  ctx.fillStyle = '#d4dde8';
+  ctx.fillRect(pxX(-0.0066), pyZ(-0.0074), 22, 56);
+  ctx.fillRect(pxX(0.0054),  pyZ(-0.0074), 22, 56);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 18px "JetBrains Mono", monospace';
+  ctx.fillText('R100', pxX(0.000), pyZ(-0.0102));
+
+  // U1 INA219A SOT-23-8 outline + label
+  ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(
+    pxX(-0.0102), pyZ(0.0022),
+    pxX(-0.0008) - pxX(-0.0102), pyZ(0.0108) - pyZ(0.0022)
+  );
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 17px "JetBrains Mono", monospace';
+  ctx.fillText('U1', pxX(-0.0112), pyZ(0.0012));
+
+  // C1 ceramic cap, R1/R2 103 pull-ups, R3/PWR LED silkscreen outlines
+  ctx.strokeRect(pxX(-0.0192), pyZ(0.0040), pxX(-0.0138) - pxX(-0.0192), pyZ(0.0090) - pyZ(0.0040));
+  ctx.fillText('C1', pxX(-0.0165), pyZ(0.0114));
+
+  ctx.strokeRect(pxX(0.0044), pyZ(0.0030), pxX(0.0106) - pxX(0.0044), pyZ(0.0060) - pyZ(0.0030));
+  ctx.strokeRect(pxX(0.0044), pyZ(0.0075), pxX(0.0106) - pxX(0.0044), pyZ(0.0105) - pyZ(0.0075));
+  ctx.font = '700 15px "JetBrains Mono", monospace';
+  ctx.fillText('R1', pxX(0.0126), pyZ(0.0045));
+  ctx.fillText('R2', pxX(0.0126), pyZ(0.0090));
+
+  ctx.strokeRect(pxX(-0.0230), pyZ(-0.0042), pxX(-0.0180) - pxX(-0.0230), pyZ(-0.0008) - pyZ(-0.0042));
+  ctx.strokeRect(pxX(-0.0230), pyZ(0.0000),  pxX(-0.0180) - pxX(-0.0230), pyZ(0.0030)  - pyZ(0.0000));
+  ctx.fillText('R3', pxX(-0.0205), pyZ(-0.0062));
+  ctx.fillStyle = '#86efac';
+  ctx.fillText('PWR', pxX(-0.0205), pyZ(0.0052));
+
+  // A0 & A1 I2C address jumper pad legend
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 17px "JetBrains Mono", monospace';
+  ctx.fillText('A0', pxX(0.0154), pyZ(0.0045));
+  ctx.fillText('A1', pxX(0.0154), pyZ(0.0100));
+  ctx.fillStyle = '#bae6fd';
+  ctx.font = '700 15px "JetBrains Mono", monospace';
+  ctx.fillText('I2C:0x40', pxX(0.0195), pyZ(-0.0010));
+
+  // Bottom 6 plated through-holes & crisp front-edge silkscreen labels aligned 1:1 with INA219_GEO
+  ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(
+    pxX(-2.95 * INA219_GEO.headerPitch), pyZ(INA219_GEO.headerZ - 0.0028),
+    pxX(2.95 * INA219_GEO.headerPitch) - pxX(-2.95 * INA219_GEO.headerPitch),
+    pyZ(INA219_GEO.headerZ + 0.0028) - pyZ(INA219_GEO.headerZ - 0.0028)
+  );
+  for (let i = 0; i < 6; i++) {
+    const px = pxX((i - 2.5) * INA219_GEO.headerPitch);
+    const py = pyZ(INA219_GEO.headerZ);
+    drawPlatedHole(px, py, 20, 9);
+
+    const lbl = INA219_PINS[i];
+    const isActive = i <= 3;
+    ctx.fillStyle = isActive ? '#fef08a' : '#e2e8f0';
+    ctx.font = '800 18px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(lbl, px, pyZ(0.0220));
+  }
+
+  return finalizeColorTex(c, anisotropy);
+}
+
+/**
+ * 1536x768 Photorealistic Green QF-M6001-2 5V Boost UPS PCB top silkscreen matching photo image_c3e0ae71.png:
+ * - '5V+' / '5V-' left input pads + USB-C IN footprint + R10/R5/R6/R11
+ * - '品名: UPS不间断升压电源' & '型号: QF-M6001-2' header
+ * - 'Q3 Q2 Q1 Q4' SOT-23 pads, 'U1' charger + 'R1 C1 R2 D3 D2 充满 充电'
+ * - 3x 'SS54' diode outlines, 4x '220 16v VT' cap outlines (C3, C8 + 2 output), '2R2' inductor footprint
+ * - 'U4' boost controller IC, 'C7 C9', 'R7 R9'
+ * - Exposed bright tinned copper solder busbar rail along lower trace
+ * - Spec box (输入电压 DC5V, UPS输出 DC5V/DC9V/DC12V, 输出功率 20W(MAX), BOOST升压, 单节锂电 4.2V)
+ * - Parallel battery polarity graphic (+ − / + − + 电池安装)
+ * - Top-right '注:' warning box, 'C4 C10 D6 R8 U3 U2 R3 C2', 'UPS+' & 'UPS-' output solder pads
+ * - 4 Corner plated mounting holes + 4 battery holder lug solder pads
+ */
+export function createUpsQfM6001Texture(anisotropy) {
+  const w = 1536;
+  const h = 768;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+
+  const pcbW = UPS_GEO.width;
+  const pcbD = UPS_GEO.depth;
+  const pxX = (xm) => ((xm + pcbW * 0.5) / pcbW) * w;
+  const pyZ = (zm) => ((zm + pcbD * 0.5) / pcbD) * h;
+
+  // Rich solder-mask green base with subtle copper-pour variation
+  const bg = ctx.createLinearGradient(0, 0, w, h);
+  bg.addColorStop(0, '#168746');
+  bg.addColorStop(0.5, '#12773d');
+  bg.addColorStop(1, '#0f6834');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  // Darker fiberglass border margin
+  ctx.strokeStyle = '#0c5229';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(3, 3, w - 6, h - 6);
+
+  // Lighter green raised copper pour zones under soldermask (authentic QF-M6001-2 copper geometry!)
+  ctx.fillStyle = 'rgba(42, 168, 92, 0.42)';
+  ctx.fillRect(pxX(-0.044), pyZ(-0.015), pxX(-0.014) - pxX(-0.044), pyZ(0.012) - pyZ(-0.015));
+  ctx.fillRect(pxX(-0.012), pyZ(-0.018), pxX(0.022) - pxX(-0.012), pyZ(0.011) - pyZ(-0.018));
+  ctx.fillRect(pxX(0.024), pyZ(-0.016), pxX(0.048) - pxX(0.024), pyZ(0.018) - pyZ(-0.016));
+  ctx.fillRect(pxX(-0.022), pyZ(0.012), pxX(0.036) - pxX(-0.022), pyZ(0.023) - pyZ(0.012));
+
+  // Exposed shiny tinned silver solder busbar strip + vertical high-current relief fingers!
+  const tinGrad = ctx.createLinearGradient(0, pyZ(0.0112), 0, pyZ(0.0142));
+  tinGrad.addColorStop(0, '#cfd8e3');
+  tinGrad.addColorStop(0.45, '#f1f5f9');
+  tinGrad.addColorStop(1, '#94a3b8');
+  ctx.fillStyle = tinGrad;
+  ctx.fillRect(pxX(-0.020), pyZ(0.0115), pxX(0.034) - pxX(-0.020), pyZ(0.0138) - pyZ(0.0115));
+  for (let i = 0; i < 6; i++) {
+    const fx = pxX(-0.020 + i * 0.0018);
+    ctx.fillRect(fx, pyZ(0.0138), 11, pyZ(0.0228) - pyZ(0.0138));
+  }
+
+  // Plated holes & HASL solder pads helpers
+  const drawPlatedHole = (cx, cy, rOuter, rInner) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, rOuter, 0, Math.PI * 2);
+    ctx.fillStyle = '#dce3ec';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
+    ctx.fillStyle = '#181c22';
+    ctx.fill();
+  };
+
+  // 4 Corner mounting holes
+  for (const [mx, mz] of [[-0.0472, -0.0212], [0.0472, -0.0212], [-0.0472, 0.0212], [0.0472, 0.0212]]) {
+    drawPlatedHole(pxX(mx), pyZ(mz), 22, 13);
+  }
+  // 4 Large silver battery-holder solder lug rings (flanking left & right)
+  for (const [bx, bz] of [[-0.0410, -0.0135], [-0.0410, 0.0135], [0.0410, -0.0135], [0.0410, 0.0135]]) {
+    drawPlatedHole(pxX(bx), pyZ(bz), 28, 12);
+    ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(pxX(bx), pyZ(bz), 32, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // 5V+ / 5V- (left) & UPS+ / UPS- (right) HASL solder pads + bold white legends
+  for (const [pxm, pzm] of [[-0.0430, -0.0212], [-0.0430, 0.0212], [0.0445, -0.0205], [0.0445, 0.0205]]) {
+    ctx.fillStyle = '#dce3ec';
+    ctx.fillRect(pxX(pxm) - 20, pyZ(pzm) - 16, 40, 32);
+    ctx.beginPath();
+    ctx.arc(pxX(pxm), pyZ(pzm), 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e242c';
+    ctx.fill();
+  }
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = '800 32px "JetBrains Mono", monospace';
+  ctx.fillText('5V+', pxX(-0.0392), pyZ(-0.0208));
+  ctx.fillText('5V-', pxX(-0.0392), pyZ(0.0212));
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#fef08a';
+  ctx.font = '800 34px "JetBrains Mono", monospace';
+  ctx.fillText('UPS+', pxX(0.0472), pyZ(-0.0160));
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('UPS-', pxX(0.0472), pyZ(0.0195));
+
+  // Header Silkscreen: 品名 & 型号 QF-M6001-2
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 22px Inter, sans-serif';
+  ctx.fillText('品名: UPS不间断升压电源', pxX(-0.0315), pyZ(-0.0214));
+  ctx.font = '800 24px "JetBrains Mono", sans-serif';
+  ctx.fillText('型号: QF-M6001-2', pxX(-0.0315), pyZ(-0.0180));
+
+  // Top-right Warning Box (注:)
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(pxX(0.0082), pyZ(-0.0235), pxX(0.0355) - pxX(0.0082), pyZ(-0.0138) - pyZ(-0.0235));
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 17px Inter, sans-serif';
+  ctx.fillText('注:', pxX(0.0092), pyZ(-0.0214));
+  ctx.font = '600 13px Inter, sans-serif';
+  ctx.fillText('1. UPS电源大功率输出发热属正常现象', pxX(0.0130), pyZ(-0.0216));
+  ctx.fillText('2. UPS电源采用两节电池并联结构', pxX(0.0130), pyZ(-0.0190));
+  ctx.fillText('3. 5V输入电源需要大于输出实际功率', pxX(0.0130), pyZ(-0.0160));
+
+  // Bottom Spec Box (输入电压 DC5V, UPS输出, 输出功率 20W MAX, BOOST升压, 单节锂电 4.2V)
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(pxX(-0.0092), pyZ(0.0145), pxX(0.0195) - pxX(-0.0092), pyZ(0.0238) - pyZ(0.0145));
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = '600 12px "JetBrains Mono", sans-serif';
+  ctx.fillText('输入电压: DC5V', pxX(-0.0082), pyZ(0.0159));
+  ctx.fillText('UPS输出: DC5V/DC9V/DC12V', pxX(-0.0082), pyZ(0.0176));
+  ctx.fillText('输出功率: 20W (MAX)', pxX(-0.0082), pyZ(0.0193));
+  ctx.fillText('结构: BOOST升压 (大功率)', pxX(-0.0082), pyZ(0.0210));
+  ctx.fillText('电池: 单节锂电并联(4.2V) 保护: 短/过/欠压', pxX(-0.0082), pyZ(0.0227));
+
+  // Bottom-Right Twin Parallel 18650 Battery Installation Silkscreen Diagram (+ − / + −)
+  for (const bz of [0.0165, 0.0210]) {
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(pxX(0.0210), pyZ(bz - 0.0017), pxX(0.0345) - pxX(0.0210), pyZ(bz + 0.0017) - pyZ(bz - 0.0017));
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 16px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('+', pxX(0.0225), pyZ(bz));
+    ctx.fillText('-', pxX(0.0330), pyZ(bz));
+  }
+  ctx.save();
+  ctx.translate(pxX(0.0372), pyZ(0.0188));
+  ctx.rotate(Math.PI / 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 15px Inter, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('电池安装', 0, 0);
+  ctx.restore();
+
+  // Component Reference Designators matching image_c3e0ae71.png!
+  const lbl = (txt, xm, zm, sz = 17, col = '#ffffff') => {
+    ctx.fillStyle = col;
+    ctx.font = `800 ${sz}px "JetBrains Mono", monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(txt, pxX(xm), pyZ(zm));
+  };
+  lbl('Q3', -0.0365, -0.0155, 16);
+  lbl('Q2', -0.0322, -0.0155, 16);
+  lbl('Q1', -0.0279, -0.0155, 16);
+  lbl('Q4', -0.0236, -0.0155, 16);
+
+  lbl('R10', -0.0408, -0.0072, 13);
+  lbl('R5',  -0.0408, -0.0024, 13);
+  lbl('R6',  -0.0408,  0.0024, 13);
+  lbl('R11', -0.0408,  0.0072, 13);
+
+  lbl('C3',  -0.0110, -0.0092, 17);
+  lbl('C8',  -0.0110,  0.0068, 17);
+  lbl('R1',  -0.0238,  0.0132, 16);
+  lbl('C1',  -0.0422,  0.0168, 14);
+  lbl('R2',  -0.0385,  0.0168, 14);
+  lbl('D3',  -0.0352,  0.0168, 14);
+  lbl('D2',  -0.0325,  0.0168, 14);
+  lbl('充满 充电', -0.0340, 0.0226, 13, '#fef08a');
+  lbl('U1',  -0.0242,  0.0218, 17);
+
+  lbl('C7',  -0.0102,  0.0026, 15);
+  lbl('C9',  -0.0068,  0.0026, 15);
+  lbl('U4',   0.0065,  0.0068, 17);
+  lbl('R7',   0.0102,  0.0002, 15);
+  lbl('R9',   0.0102,  0.0046, 15);
+
+  lbl('C4',   0.0298, -0.0128, 15);
+  lbl('C10',  0.0332, -0.0128, 15);
+  lbl('D6',   0.0382, -0.0092, 15);
+  lbl('R8',   0.0382, -0.0042, 15);
+  lbl('U3',   0.0384,  0.0005, 16);
+  lbl('U2',   0.0384,  0.0052, 16);
+  lbl('R3',   0.0382,  0.0092, 15);
+  lbl('C2',   0.0382,  0.0132, 15);
+
+  // White SMD outlines for Inductor 2R2, SS54 diodes, and 220 16v VT cans
+  ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(pxX(-0.0068), pyZ(-0.0176), pxX(0.0068) - pxX(-0.0068), pyZ(-0.0042) - pyZ(-0.0176)); // 2R2
+  ctx.strokeRect(pxX(-0.0355), pyZ(-0.0110), pxX(-0.0255) - pxX(-0.0355), pyZ(-0.0030) - pyZ(-0.0110)); // SS54 #1
+  ctx.strokeRect(pxX(-0.0355), pyZ(0.0002),  pxX(-0.0255) - pxX(-0.0355), pyZ(0.0082) - pyZ(0.0002));   // SS54 #2
+  ctx.strokeRect(pxX(0.0100),  pyZ(-0.0148), pxX(0.0200) - pxX(0.0100),  pyZ(-0.0068) - pyZ(-0.0148));  // SS54 #3
+
+  return finalizeColorTex(c, anisotropy);
+}
+
+/**
+ * Brushed silver SMD electrolytic capacitor top stamp ('220 / 16v / VT' + black negative crescent)
+ * matching QF-M6001-2 photo image_c3e0ae71.png!
+ */
+export function createCap220_16vTopTexture(anisotropy) {
+  const s = 256;
+  const c = document.createElement('canvas');
+  c.width = s;
+  c.height = s;
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = '#cfd5dd';
+  ctx.fillRect(0, 0, s, s);
+
+  ctx.beginPath();
+  ctx.arc(128, 128, 122, 0.18 * Math.PI, 0.82 * Math.PI);
+  ctx.fillStyle = '#181b20';
+  ctx.fill();
+
+  ctx.fillStyle = '#15181e';
+  ctx.textAlign = 'center';
+  ctx.font = '800 44px "JetBrains Mono", monospace';
+  ctx.fillText('220', 128, 86);
+  ctx.font = '800 38px "JetBrains Mono", monospace';
+  ctx.fillText('16v', 128, 132);
+  ctx.font = '800 36px "JetBrains Mono", monospace';
+  ctx.fillText('VT', 128, 174);
+
+  return finalizeColorTex(c, anisotropy);
+}
+
+/**
+ * High-contrast wrapped cylindrical Li-Ion 18650 Battery skin ('INR18650-30Q · 3.7V 3000mAh · + / -').
+ */
+export function createBattery18650Texture(anisotropy) {
+  const w = 512;
+  const h = 256;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+
+  // Vibrant satin sapphire-blue heatshrink PVC sleeve with subtle metallic sheen gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, '#1d6fe8');
+  grad.addColorStop(0.28, '#2b86ff');
+  grad.addColorStop(0.65, '#1357bd');
+  grad.addColorStop(1, '#0e4191');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Positive-end dark navy polarity band + crisp '+' marks
+  ctx.fillStyle = '#0b2247';
+  ctx.fillRect(0, 0, w, 34);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 22px "JetBrains Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let x = 44; x < w; x += 92) {
+    ctx.fillText('+', x, 17);
+  }
+
+  // Printed white label repeated cleanly around cylinder circumference
+  for (const yc of [92, 184]) {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 24px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('INR18650-30Q  Li-Ion', w * 0.5, yc);
+    ctx.fillStyle = '#bae6fd';
+    ctx.font = '700 17px "JetBrains Mono", monospace';
+    ctx.fillText('3.7V  3000mAh  11.1Wh  CE', w * 0.5, yc + 28);
+  }
+
+  // Negative-end ring stripe
+  ctx.fillStyle = '#091a36';
+  ctx.fillRect(0, h - 22, w, 22);
+
+  return finalizeColorTex(c, anisotropy);
+}
+
+

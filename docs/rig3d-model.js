@@ -26,18 +26,28 @@ import {
   createCoinCellTopTexture,
   createLm393Texture,
   createCdsPhotoresistorTexture,
-  createMg996rLabelTexture
+  createMg996rLabelTexture,
+  createIna219Texture,
+  createUpsQfM6001Texture,
+  createCap220_16vTopTexture,
+  createBattery18650Texture
 } from './rig3d-textures.js';
 import { computePushrodGeometry } from './rig3d-math.js';
 import {
   RIG_DIMS,
   BOARD_ORIGINS,
   GOOUUU_GEO,
+  INA219_GEO,
+  UPS_GEO,
   BREADBOARD_GEO,
   ACTIVE_DUPONT_PLUGS,
   SERVO_PLUG_PINS,
   getGoouuuPinPos,
+  getGoouuuAuxPinPos,
+  getGoouuuPwrPinPos,
+  getUpsPadPos,
   getBreadboardGndPinPos,
+  getIna219PinPos,
   getTinyRtcPinPos,
   getLdrPinPos,
   getXl4015PinPos,
@@ -86,7 +96,8 @@ function makeCableEntry(spec) {
     mat,
     baseColor: spec.baseColor,
     highlightHex: spec.highlightHex,
-    category: spec.category
+    category: spec.category,
+    nets: spec.nets || [spec.category]
   };
 }
 
@@ -327,13 +338,64 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   const lm393Ldr2Tex = createLm393Texture(maxAniso, 'LDR2');
   const cdsTex = createCdsPhotoresistorTexture(maxAniso);
   const mg996rLabelTex = createMg996rLabelTexture(maxAniso);
+  const ina219Tex = createIna219Texture(maxAniso);
+  const r100Tex = createIcLabelTexture(maxAniso, {
+    lines: ['R100'],
+    bgHex: '#15181e',
+    textHex: '#e2e8f0'
+  });
+  const ina219IcTex = createIcLabelTexture(maxAniso, {
+    lines: ['INA219A', 'TI 26V'],
+    bgHex: '#181c22',
+    textHex: '#d5dde8',
+    pinDot: true
+  });
+  const upsQfTex = createUpsQfM6001Texture(maxAniso);
+  const cap220_16vTopTex = createCap220_16vTopTexture(maxAniso);
+  const bat18650Tex = createBattery18650Texture(maxAniso);
+  const ss54Tex = createIcLabelTexture(maxAniso, {
+    lines: ['SS54'],
+    bgHex: '#171a20',
+    textHex: '#d5dde8',
+    stripeSide: 'left',
+    stripeHex: '#94a3b8'
+  });
+  const ind2R2Tex = createIcLabelTexture(maxAniso, {
+    lines: ['2R2'],
+    bgHex: '#b4b8bf',
+    textHex: '#1e2229'
+  });
+  const upsU1Tex = createIcLabelTexture(maxAniso, {
+    lines: ['TP4056', 'U1'],
+    bgHex: '#171b22',
+    textHex: '#d5dde8',
+    pinDot: true
+  });
+  const upsU4Tex = createIcLabelTexture(maxAniso, {
+    lines: ['FP6298', 'BOOST'],
+    bgHex: '#171b22',
+    textHex: '#d5dde8',
+    pinDot: true
+  });
+  const upsProtTex = createIcLabelTexture(maxAniso, {
+    lines: ['DW01'],
+    bgHex: '#171b22',
+    textHex: '#cbd5e1',
+    rotateDeg: 90
+  });
+  const upsMosTex = createIcLabelTexture(maxAniso, {
+    lines: ['8205'],
+    bgHex: '#171b22',
+    textHex: '#cbd5e1'
+  });
   disposables.push(
     solarFrontTex, solarBackTex, jboxTex, incoeTex, contactShadowTex,
     sccDisplay.texture, wattDisplay.texture, xl4015Tex, cap220TopTex, cap47TopTex,
     breadboardTex, tinyRtcTex, goouuuTex, nodeMcuTex, rfShieldTex,
     ams33Tex, cp2102Tex, tant107Tex, c226Tex, res103Tex, reg5vTex, ss24Tex, res102Tex,
     microUsbTopTex, usbCTopTex, coinCellTopTex, ds1307Tex, at24c32Tex, res332Tex, res201Tex, res514Tex, res155Tex,
-    lm393Ldr1Tex, lm393Ldr2Tex, cdsTex, mg996rLabelTex
+    lm393Ldr1Tex, lm393Ldr2Tex, cdsTex, mg996rLabelTex, ina219Tex, r100Tex, ina219IcTex,
+    upsQfTex, cap220_16vTopTex, bat18650Tex, ss54Tex, ind2R2Tex, upsU1Tex, upsU4Tex, upsProtTex, upsMosTex
   );
 
   // Instanced geometry matrix collectors (world-space relative to root)
@@ -710,13 +772,13 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   deckGroup.name = 'ElectronicsDeckGroup';
   root.add(deckGroup);
 
-  const deckCenterX = -0.068;
+  const deckCenterX = -0.005;
   const deckCenterZ = RIG_DIMS.deckZ + 0.008;
-  const deckPlate = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.012, 0.168), whiteDeckMat);
+  const deckPlate = new THREE.Mesh(new THREE.BoxGeometry(1.045, 0.012, 0.168), whiteDeckMat);
   deckPlate.position.set(deckCenterX, RIG_DIMS.deckY, deckCenterZ);
   deckPlate.castShadow = true;
   deckPlate.receiveShadow = true;
-  const deckTrim = new THREE.Mesh(new THREE.BoxGeometry(0.924, 0.004, 0.172), darkPlasticMat);
+  const deckTrim = new THREE.Mesh(new THREE.BoxGeometry(1.049, 0.004, 0.172), darkPlasticMat);
   deckTrim.position.set(deckCenterX, RIG_DIMS.deckY - 0.006, deckCenterZ);
   deckGroup.add(deckPlate, deckTrim);
 
@@ -724,9 +786,156 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   deckCollar.position.set(0, RIG_DIMS.deckY - 0.016, 0);
   const deckStrut = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.018, 0.155), blackSteelMat);
   deckStrut.position.set(0, RIG_DIMS.deckY - 0.015, 0.068);
-  const armSpine = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.012, 0.022), blackSteelMat);
+  const armSpine = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.012, 0.022), blackSteelMat);
   armSpine.position.set(deckCenterX, RIG_DIMS.deckY - 0.012, deckCenterZ);
   deckGroup.add(deckCollar, deckStrut, armSpine);
+
+  // Shared micro-SMD materials & builder for INA219, GOOUUU ESP32, and Tiny RTC
+  const espTanCapMat = new THREE.MeshStandardMaterial({ color: 0xc2935c, roughness: 0.36, metalness: 0.14 });
+  const res103TopMat = new THREE.MeshStandardMaterial({ map: res103Tex, roughness: 0.40, metalness: 0.14 });
+  const res102TopMat = new THREE.MeshStandardMaterial({ map: res102Tex, roughness: 0.38, metalness: 0.14 });
+  const addSmdPart = (parent, x, y, z, lenX, hY, lenZ, bodyTopMat, bodySideMat, endAlongX = true) => {
+    const mats = bodyTopMat
+      ? [bodySideMat, bodySideMat, bodyTopMat, bodySideMat, bodySideMat, bodySideMat]
+      : bodySideMat;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(lenX, hY, lenZ), mats);
+    body.position.set(x, y, z);
+    parent.add(body);
+    if (endAlongX) {
+      const capW = Math.max(0.0006, lenX * 0.18);
+      for (const sgn of [-1, 1]) {
+        const end = new THREE.Mesh(new THREE.BoxGeometry(capW, hY * 1.04, lenZ * 1.02), brushedSteelMat);
+        end.position.set(x + sgn * (lenX * 0.5 + capW * 0.28), y, z);
+        parent.add(end);
+      }
+    } else {
+      const capD = Math.max(0.0006, lenZ * 0.18);
+      for (const sgn of [-1, 1]) {
+        const end = new THREE.Mesh(new THREE.BoxGeometry(lenX * 1.02, hY * 1.04, capD), brushedSteelMat);
+        end.position.set(x, y, z + sgn * (lenZ * 0.5 + capD * 0.28));
+        parent.add(end);
+      }
+    }
+  };
+
+  // --- 6A-PRE. PHOTOREALISTIC ROYAL-BLUE INA219 I2C CURRENT/VOLTAGE SENSOR MODULE ---
+  const inaGroup = new THREE.Group();
+  inaGroup.name = 'Ina219SensorGroup';
+  inaGroup.position.set(BOARD_ORIGINS.ina219.x, BOARD_ORIGINS.ina219.y, BOARD_ORIGINS.ina219.z);
+  deckGroup.add(inaGroup);
+
+  const inaBluePcbMat = new THREE.MeshStandardMaterial({
+    color: 0x0f478a,
+    roughness: 0.34,
+    metalness: 0.15,
+    bumpMap: pcbBump,
+    bumpScale: 0.0006
+  });
+  const inaTopMat = new THREE.MeshStandardMaterial({
+    map: ina219Tex,
+    roughness: 0.34,
+    metalness: 0.12,
+    bumpMap: pcbBump,
+    bumpScale: 0.0005
+  });
+  const inaPcb = new THREE.Mesh(
+    new THREE.BoxGeometry(INA219_GEO.width, INA219_GEO.thick, INA219_GEO.depth),
+    [inaBluePcbMat, inaBluePcbMat, inaTopMat, inaBluePcbMat, inaBluePcbMat, inaBluePcbMat]
+  );
+  inaPcb.castShadow = true;
+  inaGroup.add(inaPcb);
+  const inaTopY = INA219_GEO.thick * 0.5; // 0.002
+
+  // 2 mounting standoffs/nuts at rear corners
+  for (const bx of [-0.0225, 0.0225]) {
+    pushInst(boltMats, BOARD_ORIGINS.ina219.x + bx, BOARD_ORIGINS.ina219.y + 0.0032, BOARD_ORIGINS.ina219.z - 0.0185, 0, 0, 0, 0.72, 0.65, 0.72);
+  }
+
+  // Rear (-Z) 2-pin royal-blue screw terminal block (VIN+ from SCC LOAD+, VIN- to XL4015 IN+)
+  const inaTermBlock = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.015, 0.014), blueTermMat);
+  inaTermBlock.position.set(0, 0.0095, -0.0165);
+  inaTermBlock.castShadow = true;
+  inaGroup.add(inaTermBlock);
+
+  for (const sx of [-0.0068, 0.0068]) {
+    const entryHole = new THREE.Mesh(new THREE.BoxGeometry(0.0062, 0.0056, 0.0014), smdDarkMat);
+    entryHole.position.set(sx, 0.0105, -0.0231);
+    const clampPlate = new THREE.Mesh(new THREE.BoxGeometry(0.0052, 0.0014, 0.0022), brassMat);
+    clampPlate.position.set(sx, 0.0086, -0.0222);
+    const screwTop = new THREE.Mesh(new THREE.CylinderGeometry(0.0034, 0.0034, 0.0022, 14), brushedSteelMat);
+    screwTop.position.set(sx, 0.0172, -0.0165);
+    const slotA = new THREE.Mesh(new THREE.BoxGeometry(0.0046, 0.0007, 0.00095), smdDarkMat);
+    slotA.position.set(sx, 0.0185, -0.0165);
+    const slotB = new THREE.Mesh(new THREE.BoxGeometry(0.00095, 0.0007, 0.0046), smdDarkMat);
+    slotB.position.set(sx, 0.0185, -0.0165);
+    inaGroup.add(entryHole, clampPlate, screwTop, slotA, slotB);
+  }
+
+  // Large 2512 High-Precision Shunt Resistor labeled 'R100' (0.1 Ohm)
+  const r100TopMat = new THREE.MeshStandardMaterial({ map: r100Tex, roughness: 0.34, metalness: 0.16 });
+  addSmdPart(inaGroup, 0.0, inaTopY + 0.0013, -0.0045, 0.0110, 0.0026, 0.0062, r100TopMat, smdDarkMat, true);
+
+  // Black SOT-23-8 'INA219A' Sense Amplifier IC + 8 shiny silver gull-wing pins
+  const inaIcTopMat = new THREE.MeshStandardMaterial({ map: ina219IcTex, roughness: 0.34, metalness: 0.18 });
+  const inaIc = new THREE.Mesh(
+    new THREE.BoxGeometry(0.0076, 0.0024, 0.0056),
+    [smdDarkMat, smdDarkMat, inaIcTopMat, smdDarkMat, smdDarkMat, smdDarkMat]
+  );
+  inaIc.position.set(-0.0055, inaTopY + 0.0012, 0.0065);
+  inaIc.castShadow = true;
+  inaGroup.add(inaIc);
+  for (let k = 0; k < 4; k++) {
+    const lx = -0.0082 + k * 0.0018;
+    for (const lz of [0.0028, 0.0102]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.0008, 0.00085, 0.0020), brushedSteelMat);
+      leg.position.set(lx, inaTopY + 0.00045, lz);
+      inaGroup.add(leg);
+    }
+  }
+
+  // 2x '103' (10kΩ) I2C pull-up SMD resistors (R1, R2) + C1 ceramic bypass capacitor
+  addSmdPart(inaGroup,  0.0075, inaTopY + 0.00075, 0.0045, 0.0044, 0.0015, 0.0022, res103TopMat, smdDarkMat, true);
+  addSmdPart(inaGroup,  0.0075, inaTopY + 0.00075, 0.0090, 0.0044, 0.0015, 0.0022, res103TopMat, smdDarkMat, true);
+  addSmdPart(inaGroup, -0.0165, inaTopY + 0.00090, 0.0065, 0.0022, 0.0018, 0.0042, null, espTanCapMat, false);
+
+  // '102' resistor (R3) + bright green PWR LED
+  addSmdPart(inaGroup, -0.0205, inaTopY + 0.00075, -0.0025, 0.0038, 0.0015, 0.0020, res102TopMat, smdDarkMat, true);
+  const inaPwrLedMat = new THREE.MeshStandardMaterial({
+    color: 0x22c55e,
+    emissive: 0x22c55e,
+    emissiveIntensity: 1.45,
+    roughness: 0.2
+  });
+  const inaPwrLed = new THREE.Mesh(new THREE.BoxGeometry(0.0030, 0.0015, 0.0020), inaPwrLedMat);
+  inaPwrLed.position.set(-0.0205, inaTopY + 0.0008, 0.0015);
+  inaGroup.add(inaPwrLed);
+
+  // A0 & A1 gold solder-jumper pads (default unbridged = 0x40)
+  for (const jz of [0.0045, 0.0100]) {
+    for (const dx of [-0.0011, 0.0011]) {
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.0017, 0.00045, 0.0024), goldPinMat);
+      pad.position.set(0.0195 + dx, inaTopY + 0.00025, jz);
+      inaGroup.add(pad);
+    }
+  }
+
+  // Front (+Z) 6-pin gold header (VCC, GND, SCL, SDA, VIN-, VIN+) + DuPont plugs on active 4 pins
+  const inaHdrLen = 6 * INA219_GEO.headerPitch + 0.0016;
+  const inaHdrBase = new THREE.Mesh(new THREE.BoxGeometry(inaHdrLen, 0.0028, 0.0040), dupontHousingMat);
+  inaHdrBase.position.set(0, inaTopY + 0.0014, INA219_GEO.headerZ);
+  inaGroup.add(inaHdrBase);
+  for (let i = 0; i < 6; i++) {
+    const pw = getIna219PinPos(i).world;
+    pushInst(goldPinMats, pw[0], BOARD_ORIGINS.ina219.y + 0.0085, pw[2], 0, 0, 0, 1, 1, 1);
+  }
+  for (const plug of ACTIVE_DUPONT_PLUGS.ina219) {
+    pushDupontPlug(getIna219PinPos(plug.index).world);
+  }
+
+  hotspotAnchors.ina219 = new THREE.Object3D();
+  hotspotAnchors.ina219.position.set(-0.006, 0.012, 0.048);
+  inaGroup.add(hotspotAnchors.ina219);
+  hotspotProxies.push(addHotspotProxy(inaGroup, 'ina219', [0.062, 0.042, 0.056], [0, 0.012, 0]));
 
   // --- 6A. AUTHENTIC RED XL4015 CC/CV 5A BUCK CONVERTER (Matches User's Uploaded Photo!) ---
   const xlGroup = new THREE.Group();
@@ -986,31 +1195,7 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     espGroup.add(hole);
   }
 
-  // Helper for micro-3D SMD ceramic capacitors & labeled SMD resistors/diodes with shiny silver solder ends
-  const espTanCapMat = new THREE.MeshStandardMaterial({ color: 0xc2935c, roughness: 0.36, metalness: 0.14 });
-  const addSmdPart = (parent, x, y, z, lenX, hY, lenZ, bodyTopMat, bodySideMat, endAlongX = true) => {
-    const mats = bodyTopMat
-      ? [bodySideMat, bodySideMat, bodyTopMat, bodySideMat, bodySideMat, bodySideMat]
-      : bodySideMat;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(lenX, hY, lenZ), mats);
-    body.position.set(x, y, z);
-    parent.add(body);
-    if (endAlongX) {
-      const capW = Math.max(0.0006, lenX * 0.18);
-      for (const sgn of [-1, 1]) {
-        const end = new THREE.Mesh(new THREE.BoxGeometry(capW, hY * 1.04, lenZ * 1.02), brushedSteelMat);
-        end.position.set(x + sgn * (lenX * 0.5 + capW * 0.28), y, z);
-        parent.add(end);
-      }
-    } else {
-      const capD = Math.max(0.0006, lenZ * 0.18);
-      for (const sgn of [-1, 1]) {
-        const end = new THREE.Mesh(new THREE.BoxGeometry(lenX * 1.02, hY * 1.04, capD), brushedSteelMat);
-        end.position.set(x, y, z + sgn * (lenZ * 0.5 + capD * 0.28));
-        parent.add(end);
-      }
-    }
-  };
+  // (Micro-SMD helper & materials hoisted above 6A-PRE for reuse across INA219, ESP32, and Tiny RTC)
 
   // Matte-black NodeMCU-32S 38-pin daughterboard seated on top of the inner 24.00mm yellow sockets!
   const mcuCenterZ = -0.0006;
@@ -1058,7 +1243,6 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   espGroup.add(rfCan);
 
   // 2) Row of 6x micro SMD pull-up/shunt resistors ('103') & tan ceramic caps immediately behind (+X of) RF shield!
-  const res103TopMat = new THREE.MeshStandardMaterial({ map: res103Tex, roughness: 0.40, metalness: 0.14 });
   for (let r = 0; r < 6; r++) {
     const rz = mcuCenterZ - 0.0088 + r * 0.0035;
     const isCap = r === 2 || r === 5;
@@ -1342,32 +1526,14 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   usbCGold.position.set(0.0719, goTopY + 0.00285, 0.0220);
   espGroup.add(usbCBody, usbCCavity, usbCTongue, usbCGold);
   // 12 crisp shiny silver rear SMD pins along -X edge (exact Photo B!)
+  // GOOUUU USB5V Type-C socket remains cleanly OPEN because ESP32 is now powered via 5V/GND from QF-M6001-2 UPS!
   for (let p = 0; p < 12; p++) {
     const cleg = new THREE.Mesh(new THREE.BoxGeometry(0.0018, 0.00055, 0.00042), brushedSteelMat);
     cleg.position.set(0.0608, goTopY + 0.0003, 0.0170 + p * 0.00091);
     espGroup.add(cleg);
   }
-  // Sleek rounded-pill USB Type-C connector plugged cleanly into GOOUUU USB5V port (leaves entire silver Type-C shell 100% visible!)
-  const usbCPlugMat = new THREE.MeshStandardMaterial({ color: 0x1e232b, roughness: 0.28, metalness: 0.42 });
-  const usbCNeck = new THREE.Mesh(new THREE.BoxGeometry(0.0040, 0.0036, 0.0094), brushedSteelMat);
-  usbCNeck.position.set(0.0746, goTopY + 0.0024, 0.0220);
-  const usbCCollar = new THREE.Mesh(new THREE.BoxGeometry(0.0024, 0.0056, 0.0108), brushedSteelMat);
-  usbCCollar.position.set(0.0774, goTopY + 0.0026, 0.0220);
-  const usbCPlugCore = new THREE.Mesh(new THREE.BoxGeometry(0.0115, 0.0058, 0.0074), usbCPlugMat);
-  usbCPlugCore.position.set(0.0842, goTopY + 0.0026, 0.0220);
-  for (const sgn of [-1, 1]) {
-    const plugSide = new THREE.Mesh(new THREE.CylinderGeometry(0.0029, 0.0029, 0.0115, 14), usbCPlugMat);
-    plugSide.rotation.z = Math.PI / 2;
-    plugSide.position.set(0.0842, goTopY + 0.0026, 0.0220 + sgn * 0.0037);
-    espGroup.add(plugSide);
-  }
-  const usbCBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.0025, 0.0032, 0.0055, 12), matteRubberMat);
-  usbCBoot.rotation.z = Math.PI / 2;
-  usbCBoot.position.set(0.0924, goTopY + 0.0026, 0.0220);
-  espGroup.add(usbCNeck, usbCCollar, usbCPlugCore, usbCBoot);
 
   // 7) Bottom-right '102' SMD Current-Limiting / Shunt Resistor + Glowing 'RPW-LED' + Onboard ESP32 Red/Blue SMD LEDs!
-  const res102TopMat = new THREE.MeshStandardMaterial({ map: res102Tex, roughness: 0.38, metalness: 0.14 });
   addSmdPart(espGroup, 0.0594, goTopY + 0.0008, 0.0399, 0.0036, 0.0015, 0.0020, res102TopMat, smdDarkMat, true);
 
   const espLedMat = new THREE.MeshStandardMaterial({
@@ -1389,6 +1555,12 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
 
   for (const plug of ACTIVE_DUPONT_PLUGS.goouuu) {
     pushDupontPlug(getGoouuuPinPos(plug.side, plug.index, plug.row).world);
+  }
+  for (const plug of ACTIVE_DUPONT_PLUGS.goouuuAux) {
+    pushDupontPlug(getGoouuuAuxPinPos(plug.pinName).world);
+  }
+  for (const plug of ACTIVE_DUPONT_PLUGS.goouuuPwr) {
+    pushDupontPlug(getGoouuuPwrPinPos(plug.pinName).world);
   }
 
   hotspotAnchors.esp32 = new THREE.Object3D();
@@ -1540,7 +1712,7 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   rtcGroup.add(coinHolderBase, coinCellMesh, coinClipBar, coinClipLeg);
 
   hotspotAnchors.rtc = new THREE.Object3D();
-  hotspotAnchors.rtc.position.set(0.044, 0.028, 0.034);
+  hotspotAnchors.rtc.position.set(-0.004, 0.008, 0.048);
   rtcGroup.add(hotspotAnchors.rtc);
   hotspotProxies.push(addHotspotProxy(rtcGroup, 'rtc', [0.088, 0.045, 0.068], [0.010, 0.014, 0]));
 
@@ -1717,6 +1889,302 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   ldrGroup.add(hotspotAnchors.ldr);
   hotspotProxies.push(addHotspotProxy(ldrGroup, 'ldr', [0.19, 0.13, 0.13], [0, 0.05, 0]));
 
+  // --- 6F. PHOTOREALISTIC GREEN QF-M6001-2 5V BOOST UPS PCB + DUAL 18650 BATTERY HOLDER & 2× 18650 CELLS ---
+  const upsGroup = new THREE.Group();
+  upsGroup.name = 'UpsQfM6001Group';
+  upsGroup.position.set(BOARD_ORIGINS.ups.x, BOARD_ORIGINS.ups.y, BOARD_ORIGINS.ups.z);
+  deckGroup.add(upsGroup);
+
+  const upsGreenPcbMat = new THREE.MeshStandardMaterial({
+    color: 0x117a3e,
+    roughness: 0.34,
+    metalness: 0.14,
+    bumpMap: pcbBump,
+    bumpScale: 0.0006
+  });
+  const upsTopMat = new THREE.MeshStandardMaterial({
+    map: upsQfTex,
+    roughness: 0.32,
+    metalness: 0.12,
+    bumpMap: pcbBump,
+    bumpScale: 0.0005
+  });
+  const upsPcb = new THREE.Mesh(
+    new THREE.BoxGeometry(UPS_GEO.width, UPS_GEO.thick, UPS_GEO.depth),
+    [upsGreenPcbMat, upsGreenPcbMat, upsTopMat, upsGreenPcbMat, upsGreenPcbMat, upsGreenPcbMat]
+  );
+  upsPcb.castShadow = true;
+  upsGroup.add(upsPcb);
+  const upsTopY = UPS_GEO.thick * 0.5; // +0.0018
+
+  // 4 Corner mounting holes standoffs/screws + 4 domed silver battery-holder solder lugs on PCB face!
+  for (const [bx, bz] of [[-0.0472, -0.0212], [0.0472, -0.0212], [-0.0472, 0.0212], [0.0472, 0.0212]]) {
+    pushInst(boltMats, BOARD_ORIGINS.ups.x + bx, BOARD_ORIGINS.ups.y + upsTopY + 0.0011, BOARD_ORIGINS.ups.z + bz, 0, 0, 0, 0.72, 0.65, 0.72);
+  }
+  for (const [lx, lz] of [[-0.0410, -0.0135], [-0.0410, 0.0135], [0.0410, -0.0135], [0.0410, 0.0135]]) {
+    const lug = new THREE.Mesh(new THREE.SphereGeometry(0.0020, 12, 10), brushedSteelMat);
+    lug.scale.set(1.0, 0.55, 1.0);
+    lug.position.set(lx, upsTopY + 0.0008, lz);
+    upsGroup.add(lug);
+  }
+
+  // Left (-X) USB Type-C 5V IN Receptacle + Plugged USB-C Power Cable Connector (matching GOOUUU Type-C plug silhouette)
+  const upsUsbBody = new THREE.Mesh(
+    new THREE.BoxGeometry(0.0102, 0.0044, 0.0102),
+    [brushedSteelMat, brushedSteelMat, usbCTopMat, brushedSteelMat, brushedSteelMat, brushedSteelMat]
+  );
+  upsUsbBody.position.set(-0.0468, upsTopY + 0.0022, 0);
+  upsUsbBody.castShadow = true;
+  upsGroup.add(upsUsbBody);
+  for (const sgn of [-1, 1]) {
+    const rEdge = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.0102, 12), brushedSteelMat);
+    rEdge.rotation.z = Math.PI / 2;
+    rEdge.position.set(-0.0468, upsTopY + 0.0022, sgn * 0.0046);
+    upsGroup.add(rEdge);
+  }
+  // 4 SMD solder anchor legs for USB-C shell
+  for (const lz of [-0.0046, -0.0018, 0.0018, 0.0046]) {
+    const uleg = new THREE.Mesh(new THREE.BoxGeometry(0.0018, 0.0006, 0.0006), brushedSteelMat);
+    uleg.position.set(-0.0412, upsTopY + 0.0003, lz);
+    upsGroup.add(uleg);
+  }
+  const upsUsbPlugMat = new THREE.MeshStandardMaterial({ color: 0x1e232b, roughness: 0.28, metalness: 0.42 });
+  const upsUsbNeck = new THREE.Mesh(new THREE.BoxGeometry(0.0036, 0.0034, 0.0086), brushedSteelMat);
+  upsUsbNeck.position.set(-0.0534, upsTopY + 0.0022, 0);
+  const upsUsbCollar = new THREE.Mesh(new THREE.BoxGeometry(0.0022, 0.0052, 0.0100), brushedSteelMat);
+  upsUsbCollar.position.set(-0.0562, upsTopY + 0.0024, 0);
+  const upsUsbPlugCore = new THREE.Mesh(new THREE.BoxGeometry(0.0108, 0.0054, 0.0070), upsUsbPlugMat);
+  upsUsbPlugCore.position.set(-0.0626, upsTopY + 0.0024, 0);
+  for (const sgn of [-1, 1]) {
+    const ps = new THREE.Mesh(new THREE.CylinderGeometry(0.0027, 0.0027, 0.0108, 12), upsUsbPlugMat);
+    ps.rotation.z = Math.PI / 2;
+    ps.position.set(-0.0626, upsTopY + 0.0024, sgn * 0.0034);
+    upsGroup.add(ps);
+  }
+  const upsUsbBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0029, 0.0048, 10), matteRubberMat);
+  upsUsbBoot.rotation.z = Math.PI / 2;
+  upsUsbBoot.position.set(-0.0695, upsTopY + 0.0024, 0);
+  upsGroup.add(upsUsbNeck, upsUsbCollar, upsUsbPlugCore, upsUsbBoot);
+
+  // Top-Left Row: Q3, Q2, Q1, Q4 (4× SOT-23 Power-Path Switching MOSFETs labeled '8205') + R10/R5/R6/R11
+  const upsMosTopMat = new THREE.MeshStandardMaterial({ map: upsMosTex, roughness: 0.34, metalness: 0.16 });
+  for (const qx of [-0.0365, -0.0322, -0.0279, -0.0236]) {
+    const qBody = new THREE.Mesh(
+      new THREE.BoxGeometry(0.0032, 0.0014, 0.0022),
+      [smdDarkMat, smdDarkMat, upsMosTopMat, smdDarkMat, smdDarkMat, smdDarkMat]
+    );
+    qBody.position.set(qx, upsTopY + 0.0007, -0.0185);
+    upsGroup.add(qBody);
+    for (const [lx, lz] of [[-0.0010, -0.0013], [0.0010, -0.0013], [0, 0.0013]]) {
+      const qleg = new THREE.Mesh(new THREE.BoxGeometry(0.0006, 0.00045, 0.0008), brushedSteelMat);
+      qleg.position.set(qx + lx, upsTopY + 0.00025, -0.0185 + lz);
+      upsGroup.add(qleg);
+    }
+  }
+  for (const rz of [-0.0072, -0.0024, 0.0024, 0.0072]) {
+    addSmdPart(upsGroup, -0.0382, upsTopY + 0.0006, rz, 0.0024, 0.0012, 0.0014, res103TopMat, smdDarkMat, true);
+  }
+
+  // Mid-Left: 2× Vertical Schottky Diodes 'SS54' + Output Horizontal 'SS54' (Total 3× SS54!)
+  const ss54TopMat = new THREE.MeshStandardMaterial({ map: ss54Tex, roughness: 0.34, metalness: 0.16 });
+  for (const sz of [-0.0070, 0.0042]) {
+    addSmdPart(upsGroup, -0.0305, upsTopY + 0.0015, sz, 0.0086, 0.0030, 0.0066, ss54TopMat, smdDarkMat, true);
+  }
+  addSmdPart(upsGroup, 0.0150, upsTopY + 0.0015, -0.0108, 0.0086, 0.0030, 0.0066, ss54TopMat, smdDarkMat, true);
+
+  // 4× Brushed-Silver SMD Electrolytic Capacitors labeled '220 16v VT' (C3, C8 input + 2 output cans!)
+  const cap220_16vTopMat = new THREE.MeshStandardMaterial({ map: cap220_16vTopTex, roughness: 0.26, metalness: 0.66 });
+  for (const [cx, cz, rotY] of [
+    [-0.0170, -0.0080, 0],
+    [-0.0170,  0.0052, 0],
+    [ 0.0168,  0.0048, 0],
+    [ 0.0282,  0.0048, 0]
+  ]) {
+    const cSeat = new THREE.Mesh(new THREE.BoxGeometry(0.0106, 0.0015, 0.0106), dupontHousingMat);
+    cSeat.position.set(cx, upsTopY + 0.00075, cz);
+    const cCan = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.0049, 0.0049, 0.0074, 20),
+      [brushedSteelMat, cap220_16vTopMat, brushedSteelMat]
+    );
+    cCan.position.set(cx, upsTopY + 0.0050, cz);
+    cCan.rotation.y = rotY;
+    cCan.castShadow = true;
+    upsGroup.add(cSeat, cCan);
+  }
+
+  // Top-Center: Large Ferrite-Shielded SMD Power Inductor '2R2' (2.2 uH) + heavy silver side tabs
+  const ind2R2TopMat = new THREE.MeshStandardMaterial({ map: ind2R2Tex, roughness: 0.36, metalness: 0.44 });
+  const indBodyMat = new THREE.MeshStandardMaterial({ color: 0x9aa1ab, roughness: 0.40, metalness: 0.42 });
+  const ind2R2 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.0124, 0.0066, 0.0124),
+    [indBodyMat, indBodyMat, ind2R2TopMat, indBodyMat, indBodyMat, indBodyMat]
+  );
+  ind2R2.position.set(0.0, upsTopY + 0.0033, -0.0109);
+  ind2R2.castShadow = true;
+  upsGroup.add(ind2R2);
+  for (const sgn of [-1, 1]) {
+    const tab = new THREE.Mesh(new THREE.BoxGeometry(0.0018, 0.0024, 0.0076), brushedSteelMat);
+    tab.position.set(sgn * 0.0068, upsTopY + 0.0012, -0.0109);
+    upsGroup.add(tab);
+  }
+
+  // Bottom-Left: SOIC-8 Charger IC 'U1' (TP4056) + 8 gull-wing pins + R1, C1, R2 + Glowing 'D3' (Full) & 'D2' (Charge) LEDs
+  const upsU1TopMat = new THREE.MeshStandardMaterial({ map: upsU1Tex, roughness: 0.34, metalness: 0.18 });
+  const u1Chip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.0066, 0.0022, 0.0054),
+    [smdDarkMat, smdDarkMat, upsU1TopMat, smdDarkMat, smdDarkMat, smdDarkMat]
+  );
+  u1Chip.position.set(-0.0298, upsTopY + 0.0011, 0.0168);
+  upsGroup.add(u1Chip);
+  for (let k = 0; k < 4; k++) {
+    const lx = -0.0320 + k * 0.0015;
+    for (const lz of [0.0132, 0.0204]) {
+      const u1Leg = new THREE.Mesh(new THREE.BoxGeometry(0.0007, 0.0007, 0.0018), brushedSteelMat);
+      u1Leg.position.set(lx, upsTopY + 0.00035, lz);
+      upsGroup.add(u1Leg);
+    }
+  }
+  addSmdPart(upsGroup, -0.0260, upsTopY + 0.0006, 0.0130, 0.0028, 0.0012, 0.0016, res102TopMat, smdDarkMat, true); // R1
+  addSmdPart(upsGroup, -0.0422, upsTopY + 0.0007, 0.0190, 0.0016, 0.0014, 0.0026, null, espTanCapMat, false);     // C1
+  addSmdPart(upsGroup, -0.0385, upsTopY + 0.0006, 0.0190, 0.0016, 0.0012, 0.0024, res102TopMat, smdDarkMat, false); // R2
+
+  const upsFullLedMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, emissive: 0x2563eb, emissiveIntensity: 0.55, roughness: 0.2 });
+  const upsChgLedMat = new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 1.45, roughness: 0.2 });
+  const d3Led = new THREE.Mesh(new THREE.BoxGeometry(0.0018, 0.0012, 0.0026), upsFullLedMat);
+  d3Led.position.set(-0.0352, upsTopY + 0.0007, 0.0190);
+  const d2Led = new THREE.Mesh(new THREE.BoxGeometry(0.0018, 0.0012, 0.0026), upsChgLedMat);
+  d2Led.position.set(-0.0325, upsTopY + 0.0007, 0.0190);
+  upsGroup.add(d3Led, d2Led);
+
+  // Center-Bottom: SOIC-8 Boost Controller IC 'U4' (FP6298) + C7, C9, R7, R9
+  const upsU4TopMat = new THREE.MeshStandardMaterial({ map: upsU4Tex, roughness: 0.34, metalness: 0.18 });
+  const u4Chip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.0068, 0.0022, 0.0056),
+    [smdDarkMat, smdDarkMat, upsU4TopMat, smdDarkMat, smdDarkMat, smdDarkMat]
+  );
+  u4Chip.position.set(-0.0008, upsTopY + 0.0011, 0.0062);
+  upsGroup.add(u4Chip);
+  for (let k = 0; k < 4; k++) {
+    const lx = -0.0031 + k * 0.00155;
+    for (const lz of [0.0026, 0.0098]) {
+      const u4Leg = new THREE.Mesh(new THREE.BoxGeometry(0.0007, 0.0007, 0.0018), brushedSteelMat);
+      u4Leg.position.set(lx, upsTopY + 0.00035, lz);
+      upsGroup.add(u4Leg);
+    }
+  }
+  addSmdPart(upsGroup, -0.0102, upsTopY + 0.0007, 0.0062, 0.0018, 0.0014, 0.0028, null, espTanCapMat, false);     // C7
+  addSmdPart(upsGroup, -0.0068, upsTopY + 0.0007, 0.0062, 0.0018, 0.0014, 0.0028, null, espTanCapMat, false);     // C9
+  addSmdPart(upsGroup,  0.0072, upsTopY + 0.0006, 0.0018, 0.0028, 0.0012, 0.0016, res103TopMat, smdDarkMat, true); // R7
+  addSmdPart(upsGroup,  0.0072, upsTopY + 0.0006, 0.0064, 0.0028, 0.0012, 0.0016, res102TopMat, smdDarkMat, true); // R9
+
+  // Right Side Protection & Output Filter: C4, C10, Glowing 'D6' LED, R8, Twin Protection ICs 'U3' & 'U2' (DW01/8205), R3, C2
+  addSmdPart(upsGroup, 0.0298, upsTopY + 0.0007, -0.0096, 0.0018, 0.0014, 0.0028, null, espTanCapMat, false); // C4
+  addSmdPart(upsGroup, 0.0332, upsTopY + 0.0007, -0.0096, 0.0018, 0.0014, 0.0028, null, espTanCapMat, false); // C10
+  const upsOutLedMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x22c55e, emissiveIntensity: 1.5, roughness: 0.2 });
+  const d6Led = new THREE.Mesh(new THREE.BoxGeometry(0.0028, 0.0013, 0.0020), upsOutLedMat);
+  d6Led.position.set(0.0352, upsTopY + 0.0007, -0.0064);
+  upsGroup.add(d6Led);
+  addSmdPart(upsGroup, 0.0352, upsTopY + 0.0006, -0.0034, 0.0028, 0.0012, 0.0016, res102TopMat, smdDarkMat, true); // R8
+
+  const upsProtTopMat = new THREE.MeshStandardMaterial({ map: upsProtTex, roughness: 0.34, metalness: 0.18 });
+  for (const uz of [0.0005, 0.0052]) {
+    const protIc = new THREE.Mesh(
+      new THREE.BoxGeometry(0.0028, 0.0014, 0.0036),
+      [smdDarkMat, smdDarkMat, upsProtTopMat, smdDarkMat, smdDarkMat, smdDarkMat]
+    );
+    protIc.position.set(0.0346, upsTopY + 0.0007, uz);
+    upsGroup.add(protIc);
+    for (const [lx, lz] of [[-0.0017, -0.0010], [-0.0017, 0], [-0.0017, 0.0010], [0.0017, -0.0010], [0.0017, 0], [0.0017, 0.0010]]) {
+      const pLeg = new THREE.Mesh(new THREE.BoxGeometry(0.0009, 0.00045, 0.00055), brushedSteelMat);
+      pLeg.position.set(0.0346 + lx, upsTopY + 0.00025, uz + lz);
+      upsGroup.add(pLeg);
+    }
+  }
+  addSmdPart(upsGroup, 0.0352, upsTopY + 0.0006, 0.0092, 0.0028, 0.0012, 0.0016, res102TopMat, smdDarkMat, true); // R3
+  addSmdPart(upsGroup, 0.0352, upsTopY + 0.0007, 0.0132, 0.0028, 0.0014, 0.0018, null, espTanCapMat, true);      // C2
+
+  // Domed Solder Joints on UPS+ (5V) & UPS− (GND) Pads on Right Edge where Red & Black wires exit to ESP32
+  for (const padName of ['UPS+', 'UPS-']) {
+    const ploc = getUpsPadPos(padName).local;
+    const solderJoint = new THREE.Mesh(new THREE.SphereGeometry(0.0022, 12, 10), brushedSteelMat);
+    solderJoint.scale.set(1.1, 0.65, 1.1);
+    solderJoint.position.set(ploc[0], upsTopY + 0.0009, ploc[2]);
+    upsGroup.add(solderJoint);
+  }
+
+  // Bottom Dual-18650 Battery Cradle (Open-Sided Matte Black ABS Holder so BOTH 18650 Cells are clearly visible!)
+  const holderTopY = -upsTopY; // -0.0018
+  const holderBotY = -0.0222;  // rests flush on white electronics deck top!
+  const cradleBase = new THREE.Mesh(new THREE.BoxGeometry(0.086, 0.0030, 0.044), darkPlasticMat);
+  cradleBase.position.set(0, holderBotY + 0.0015, 0);
+  cradleBase.castShadow = true;
+  cradleBase.receiveShadow = true;
+  upsGroup.add(cradleBase);
+
+  // Left (-X) & Right (+X) End Contact Plates holding the 2× 18650 cells between PCB & Deck
+  for (const ex of [-0.0415, 0.0415]) {
+    const endWall = new THREE.Mesh(new THREE.BoxGeometry(0.0040, 0.0204, 0.044), darkPlasticMat);
+    endWall.position.set(ex, -0.0120, 0);
+    endWall.castShadow = true;
+    upsGroup.add(endWall);
+  }
+  // Low Center Divider Rib + Slim Front/Rear Cutaway Rails (keeps both blue 18650 cells clearly exposed!)
+  const midDivider = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.0100, 0.0024), darkPlasticMat);
+  midDivider.position.set(0, -0.0155, 0);
+  upsGroup.add(midDivider);
+  for (const fz of [-0.0212, 0.0212]) {
+    const sideLip = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.0062, 0.0022), darkPlasticMat);
+    sideLip.position.set(0, holderBotY + 0.0042, fz);
+    upsGroup.add(sideLip);
+  }
+
+  // 2× Horizontal Cylindrical 18650 Li-Ion Batteries (3.7V/4.2V Parallel Bank) + '+' Button Caps + '−' Coil Springs!
+  const bat18650WrapMat = new THREE.MeshStandardMaterial({
+    map: bat18650Tex,
+    roughness: 0.30,
+    metalness: 0.18
+  });
+  const whiteInsulatorMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.45, metalness: 0.04 });
+  for (const cz of UPS_GEO.cellZOffsets) {
+    const cellCy = UPS_GEO.cellYOffset;
+    const cellBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(UPS_GEO.cellRadius, UPS_GEO.cellRadius, UPS_GEO.cellLength, 24),
+      [bat18650WrapMat, brushedSteelMat, brushedSteelMat]
+    );
+    cellBody.rotation.z = Math.PI / 2;
+    cellBody.rotation.x = Math.PI * 0.25;
+    cellBody.position.set(0, cellCy, cz);
+    cellBody.castShadow = true;
+    cellBody.receiveShadow = true;
+
+    // White insulating ring + raised silver '+' button terminal on -X end
+    const posRing = new THREE.Mesh(new THREE.CylinderGeometry(UPS_GEO.cellRadius * 0.88, UPS_GEO.cellRadius * 0.88, 0.0014, 18), whiteInsulatorMat);
+    posRing.rotation.z = Math.PI / 2;
+    posRing.position.set(-UPS_GEO.cellLength * 0.5 - 0.0006, cellCy, cz);
+
+    const posCap = new THREE.Mesh(new THREE.CylinderGeometry(0.0036, 0.0038, 0.0022, 16), brushedSteelMat);
+    posCap.rotation.z = Math.PI / 2;
+    posCap.position.set(-UPS_GEO.cellLength * 0.5 - 0.0016, cellCy, cz);
+
+    const posTab = new THREE.Mesh(new THREE.BoxGeometry(0.0018, 0.0110, 0.0068), brushedSteelMat);
+    posTab.position.set(-0.0382, cellCy + 0.0035, cz);
+
+    // Flat silver '−' cathode plate + coiled compression spring on +X end
+    const negSpring = new THREE.Mesh(new THREE.CylinderGeometry(0.0044, 0.0056, 0.0052, 14, 1, true), brushedSteelMat);
+    negSpring.rotation.z = Math.PI / 2;
+    negSpring.position.set(UPS_GEO.cellLength * 0.5 + 0.0030, cellCy, cz);
+
+    const negTab = new THREE.Mesh(new THREE.BoxGeometry(0.0018, 0.0110, 0.0068), brushedSteelMat);
+    negTab.position.set(0.0382, cellCy + 0.0035, cz);
+
+    upsGroup.add(cellBody, posRing, posCap, posTab, negSpring, negTab);
+  }
+
+  hotspotAnchors.ups = new THREE.Object3D();
+  hotspotAnchors.ups.position.set(0.024, 0.056, -0.014);
+  upsGroup.add(hotspotAnchors.ups);
+  hotspotProxies.push(addHotspotProxy(upsGroup, 'ups', [0.115, 0.056, 0.064], [0, -0.004, 0]));
+
   // ==========================================================================
   // 7. OVERHEAD SOLAR PANEL (FRONT CELLS PITCHED TOWARD +Z, SAME SIDE AS WATT METER & SCC!)
   // ==========================================================================
@@ -1858,7 +2326,7 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   const pinGeoLarge = new THREE.SphereGeometry(0.0115, 8, 8);
 
   for (const pin of pinRegistry) {
-    const isLarge = pin.id.startsWith('scc-') || pin.id.startsWith('watt-') || pin.id.startsWith('bat-') || pin.id.startsWith('xl-');
+    const isLarge = pin.id.startsWith('scc-') || pin.id.startsWith('watt-') || pin.id.startsWith('bat-') || pin.id.startsWith('xl-') || pin.id.endsWith('-term');
     const proxy = new THREE.Mesh(isLarge ? pinGeoLarge : pinGeoSmall, pinHitMat);
     proxy.position.set(pin.pos[0], pin.pos[1], pin.pos[2]);
     proxy.layers.set(PIN_HIT_LAYER);
@@ -1933,7 +2401,7 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
           w.mat.opacity = 0.15;
         }
       } else if (stateWiringHighlight) {
-        if (!stateFocusCategory || w.category === stateFocusCategory) {
+        if (!stateFocusCategory || w.category === stateFocusCategory || w.nets.includes(stateFocusCategory)) {
           w.mat.color.setHex(w.highlightHex);
           w.mat.emissive.setHex(w.highlightHex);
           w.mat.emissiveIntensity = isHovered ? 1.35 : (stateFocusCategory ? 1.15 : 0.85);

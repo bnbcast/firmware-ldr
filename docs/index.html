@@ -413,7 +413,7 @@
               <span class="label">INFO HARDWARE &amp; PANDUAN PIN LENGKAP (MG996R)</span>
             </div>
             <div class="hw-kv-list">
-              <div class="kv"><span>ESP32 &amp; Expansion</span><strong class="mono">NodeMCU-32S (38-Pin) + GOOUUU V4 (3.3V) · Daya via USB-C 5V (GOOUUU)</strong></div>
+              <div class="kv"><span>ESP32 &amp; Expansion</span><strong class="mono">NodeMCU-32S (38-Pin) + GOOUUU V4 (3.3V) · Daya via UPS QF-M6001-2 (2×18650) → 5V/GND</strong></div>
               <div class="kv"><span>LDR 1 &amp; LDR 2</span><strong class="mono">AO → GPIO34 &amp; GPIO35 · VCC = 3.3V · GND = ESP32 (DO Kosong)</strong></div>
               <div class="kv"><span>Servo MG996R</span><strong class="mono">PWM → GPIO18 (P18) · VCC = 6V (XL4015) · Common GND (3 Kabel)</strong></div>
               <div class="kv"><span>RTC I2C &amp; EEPROM</span><strong class="mono" id="metaI2c">SDA=21 · SCL=22 · 0x68 · Err 0</strong></div>
@@ -491,13 +491,15 @@
                 <button class="dock-btn active" type="button" data-3d-cam="overview">Seluruh Rig</button>
                 <button class="dock-btn" type="button" data-3d-cam="front">Depan Stack</button>
                 <button class="dock-btn" type="button" data-3d-cam="watt_scc">Watt &amp; SCC</button>
+                <button class="dock-btn" type="button" data-3d-cam="ina219">INA219 (12V)</button>
                 <button class="dock-btn" type="button" data-3d-cam="xl4015">XL4015 Merah</button>
                 <button class="dock-btn" type="button" data-3d-cam="breadboard">Breadboard GND</button>
                 <button class="dock-btn" type="button" data-3d-cam="esp_pins">Pin ESP32</button>
                 <button class="dock-btn" type="button" data-3d-cam="tiny_rtc">Tiny RTC</button>
+                <button class="dock-btn" type="button" data-3d-cam="ups">UPS 5V (2×18650)</button>
                 <button class="dock-btn" type="button" data-3d-cam="ldr">Sekat LDR</button>
                 <button class="dock-btn" type="button" data-3d-cam="rear">Servo MG996R</button>
-                <button class="dock-btn side-span-2" type="button" data-3d-cam="power">Aki INCOE 12V</button>
+                <button class="dock-btn" type="button" data-3d-cam="power">Aki INCOE 12V</button>
               </div>
             </div>
 
@@ -516,15 +518,16 @@
               <div class="side-section-lbl">FILTER JALUR KABEL</div>
               <div id="rig3dWiringLegend" class="side-wire-list" aria-label="Filter Jalur Kabel Pin-ke-Pin">
                 <button type="button" class="wire-chip active" data-wire-net="">Semua Kabel</button>
-                <button type="button" class="wire-chip" data-wire-net="gnd"><span class="wire-dot" style="background:#00d4ff"></span>Common GND (3 Kabel)</button>
+                <button type="button" class="wire-chip" data-wire-net="gnd"><span class="wire-dot" style="background:#00d4ff"></span>Common GND (4 Kabel)</button>
                 <button type="button" class="wire-chip" data-wire-net="pv"><span class="wire-dot" style="background:#ff3b30"></span>Panel → Watt → SCC</button>
                 <button type="button" class="wire-chip" data-wire-net="bat"><span class="wire-dot" style="background:#ef4444"></span>Aki 12V ↔ SCC</button>
-                <button type="button" class="wire-chip" data-wire-net="buck12v"><span class="wire-dot" style="background:#ff5722"></span>SCC LOAD 12V → XL4015</button>
+                <button type="button" class="wire-chip" data-wire-net="buck12v"><span class="wire-dot" style="background:#ff5722"></span>SCC LOAD 12V → INA219 → XL4015</button>
+                <button type="button" class="wire-chip" data-wire-net="ina219"><span class="wire-dot" style="background:#06b6d4"></span>INA219 (I2C &amp; Shunt 12V)</button>
                 <button type="button" class="wire-chip" data-wire-net="servo6v"><span class="wire-dot" style="background:#ff69b4"></span>XL4015 6V → Servo Merah</button>
                 <button type="button" class="wire-chip" data-wire-net="pwm"><span class="wire-dot" style="background:#ff9f0a"></span>GPIO18 → Servo Oranye</button>
-                <button type="button" class="wire-chip" data-wire-net="i2c"><span class="wire-dot" style="background:#2ecc71"></span>Tiny RTC ↔ ESP32</button>
+                <button type="button" class="wire-chip" data-wire-net="i2c"><span class="wire-dot" style="background:#2ecc71"></span>Bus I2C (RTC &amp; INA219 ↔ ESP32)</button>
                 <button type="button" class="wire-chip" data-wire-net="ldr"><span class="wire-dot" style="background:#a855f7"></span>LDR 1 &amp; 2 ↔ ESP32</button>
-                <button type="button" class="wire-chip" data-wire-net="usb"><span class="wire-dot" style="background:#94a3b8"></span>USB-C 5V → GOOUUU V4</button>
+                <button type="button" class="wire-chip" data-wire-net="usb"><span class="wire-dot" style="background:#22c55e"></span>UPS 5V (2×18650) → ESP32</button>
               </div>
             </div>
 
