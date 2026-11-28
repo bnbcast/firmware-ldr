@@ -60,6 +60,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Stage Three.js module assets
+        run: |
+          mkdir -p docs/vendor/three/build
+          mkdir -p docs/vendor/three/examples/jsm/controls
+          mkdir -p docs/vendor/three/examples/jsm/environments
+          cp node_modules/three/build/three.module.js docs/vendor/three/build/
+          cp node_modules/three/examples/jsm/controls/OrbitControls.js docs/vendor/three/examples/jsm/controls/
+          cp node_modules/three/examples/jsm/environments/RoomEnvironment.js docs/vendor/three/examples/jsm/environments/
+          cp node_modules/three/LICENSE docs/vendor/three/
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
