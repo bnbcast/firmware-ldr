@@ -38,10 +38,11 @@ export const BOARD_ORIGINS = {
   ina219: { x: -0.306, y: RIG_DIMS.deckY + 0.011, z: RIG_DIMS.deckZ + 0.004 },
   xl:     { x: -0.215, y: RIG_DIMS.deckY + 0.011, z: RIG_DIMS.deckZ + 0.004 },
   bread:  { x: -0.042, y: RIG_DIMS.deckY + 0.011, z: RIG_DIMS.deckZ + 0.004 },
-  esp:    { x: 0.140,  y: RIG_DIMS.deckY + 0.010, z: RIG_DIMS.deckZ + 0.004 },
-  rtc:    { x: 0.295,  y: RIG_DIMS.deckY + 0.010, z: RIG_DIMS.deckZ + 0.004 },
-  ups:    { x: 0.442,  y: RIG_DIMS.deckY + 0.028, z: RIG_DIMS.deckZ + 0.004 },
-  bat:    { x: -0.22,  y: 0.0,                    z: -0.14, rotY: 0.26 }
+  esp:       { x: 0.140,  y: RIG_DIMS.deckY + 0.010, z: RIG_DIMS.deckZ + 0.004 },
+  rtc:       { x: 0.295,  y: RIG_DIMS.deckY + 0.010, z: RIG_DIMS.deckZ + 0.004 },
+  upsSwitch: { x: 0.348,  y: RIG_DIMS.deckY + 0.0076, z: RIG_DIMS.deckZ - 0.048 },
+  ups:       { x: 0.442,  y: RIG_DIMS.deckY + 0.028, z: RIG_DIMS.deckZ + 0.004 },
+  bat:       { x: -0.22,  y: 0.0,                    z: -0.14, rotY: 0.26 }
 };
 
 export const GOOUUU_FRONT_PINS = [
@@ -93,6 +94,12 @@ export const UPS_GEO = {
   cellLength: 0.065,
   cellZOffsets: [-0.0110, 0.0110],
   cellYOffset: -0.0112
+};
+
+export const UPS_SWITCH_GEO = {
+  width: 0.036,
+  thick: 0.0032,
+  depth: 0.022
 };
 
 export const BREADBOARD_GEO = {
@@ -181,6 +188,26 @@ export function getUpsPadPos(padName) {
       BOARD_ORIGINS.ups.x + local[0],
       BOARD_ORIGINS.ups.y + local[1],
       BOARD_ORIGINS.ups.z + local[2]
+    ]
+  };
+}
+
+/**
+ * Inline SPST Rocker Switch (KCD11 I/O) on the UPS+ -> GOOUUU V4 5V line so 5V UPS
+ * output can be cleanly isolated before flashing ESP32 via laptop USB.
+ */
+export function getUpsSwitchPinPos(pinName) {
+  const map = {
+    'IN':  [ 0.0125, 0.0024, 0.0],
+    'OUT': [-0.0125, 0.0024, 0.0]
+  };
+  const local = map[pinName] || map['IN'];
+  return {
+    local,
+    world: [
+      BOARD_ORIGINS.upsSwitch.x + local[0],
+      BOARD_ORIGINS.upsSwitch.y + local[1],
+      BOARD_ORIGINS.upsSwitch.z + local[2]
     ]
   };
 }
@@ -443,11 +470,11 @@ export const WIRE_NET_META = {
     pins: 'LDR1 → ESP32 GPIO34 / 3.3V / GND  |  LDR2 → ESP32 GPIO35 / 3.3V / GND'
   },
   usb: {
-    label: 'UPS 5V (QF-M6001-2 · 2×18650) → ESP32',
+    label: 'UPS 5V → Switch → ESP32',
     colorHex: '#22c55e',
     preset: 'ups',
-    summary: 'Adaptor USB-C 5V masuk ke modul UPS QF-M6001-2 (isi 2× baterai 18650 paralel 4.2V), lalu output UPS+ (5V) & UPS− (GND) menyuplai ESP32 tanpa putus.',
-    pins: 'USB-C 5V IN → QF-M6001-2 (2×18650) → UPS+ (5V) / UPS− (GND) → GOOUUU V4 5V / GND'
+    summary: 'Adaptor USB-C 5V masuk ke UPS QF-M6001-2 (isi 2×18650 paralel 4.2V), lalu UPS+ melewati Switch I/O (aman diputus saat flash USB) menuju GOOUUU V4 5V & UPS− ke GND.',
+    pins: 'USB-C 5V IN → QF-M6001-2 → UPS+ → Switch 5V (I/O) → GOOUUU 5V · UPS− → GND'
   }
 };
 
@@ -479,6 +506,8 @@ export function buildPinAccurateWireSpecs() {
   const upsUsbIn = getUpsPadPos('USBC_IN').world;
   const upsOutP  = getUpsPadPos('UPS+').world;
   const upsOutN  = getUpsPadPos('UPS-').world;
+  const swUpsIn  = getUpsSwitchPinPos('IN').world;
+  const swUpsOut = getUpsSwitchPinPos('OUT').world;
 
   // Breadboard Common GND: 4 slots (XL4015 OUT−, Servo, ESP32, INA219 GND)
   const bbXl  = getBreadboardGndPinPos(0).world;
@@ -1182,23 +1211,43 @@ export function buildPinAccurateWireSpecs() {
       ]
     },
     {
-      id: 'ups-esp-5v',
+      id: 'ups-sw-in',
       fromPin: 'UPS QF-M6001-2 UPS+ (5V)',
-      toPin: 'ESP32 GOOUUU V4 5V',
+      toPin: 'Switch 5V IN (UPS+)',
       fromPinId: 'ups-out-p',
-      toPinId: 'esp-pwr-5v',
-      voltage: '5.0V Boost DC (Max 20W)',
-      description: 'Kabel merah dari pad solder UPS+ QF-M6001-2 menyuplai tegangan stabil 5V tanpa jeda (backup 2×18650) ke pin 5V papan ekspansi GOOUUU V4 ESP32.',
+      toPinId: 'sw-ups-in',
+      voltage: '5.0V Boost DC',
+      description: 'Kabel merah dari pad solder UPS+ QF-M6001-2 masuk ke terminal IN saklar pengaman 5V (agar jalur 5V UPS dapat diputus sebelum flash ESP32 lewat USB laptop).',
       category: 'usb',
       radius: 0.0023,
       baseColor: 0xdc2626,
       highlightHex: 0x22c55e,
       points: [
         upsOutP,
-        [upsOutP[0] + 0.006, upsOutP[1] + 0.014, upsOutP[2] - 0.006],
-        [0.440, 0.660, 0.088],
-        [0.245, 0.660, 0.088],
-        [0.215, 0.652, 0.145],
+        [upsOutP[0] + 0.005, upsOutP[1] + 0.012, upsOutP[2] - 0.008],
+        [0.450, 0.655, 0.072],
+        [0.395, 0.652, 0.068],
+        [swUpsIn[0] + 0.008, swUpsIn[1] + 0.015, swUpsIn[2]],
+        swUpsIn
+      ]
+    },
+    {
+      id: 'sw-esp-5v',
+      fromPin: 'Switch 5V OUT (5V)',
+      toPin: 'ESP32 GOOUUU V4 5V',
+      fromPinId: 'sw-ups-out',
+      toPinId: 'esp-pwr-5v',
+      voltage: '5.0V Boost DC (Tersaklar)',
+      description: 'Kabel merah dari terminal OUT saklar 5V menuju pin 5V papan ekspansi GOOUUU V4 ESP32. Saat posisi OFF (O), ESP32 aman dicolok USB laptop untuk flash.',
+      category: 'usb',
+      radius: 0.0023,
+      baseColor: 0xdc2626,
+      highlightHex: 0x22c55e,
+      points: [
+        swUpsOut,
+        [swUpsOut[0] - 0.008, swUpsOut[1] + 0.015, swUpsOut[2]],
+        [0.245, 0.656, 0.076],
+        [0.215, 0.652, 0.142],
         [espPwr5v[0] + 0.012, espPwr5v[1] + 0.016, espPwr5v[2]],
         [espPwr5v[0], espPwr5v[1] + 0.013, espPwr5v[2]],
         espPwr5v
@@ -1351,8 +1400,8 @@ export function buildClickablePinRegistry() {
       id: 'esp-usb', board: 'ESP32S NodeMCU', pinName: 'Port Micro-USB (Data + 5V)',
       pos: [BOARD_ORIGINS.esp.x + 0.030, BOARD_ORIGINS.esp.y + 0.0175, BOARD_ORIGINS.esp.z - 0.0006],
       color: '#94a3b8', status: 'KOSONG', voltage: '5V USB + Serial', wireIds: [],
-      connectedTo: ['Kosong (daya saat ini lewat USB-C 5V GOOUUU V4)'],
-      detail: 'Port Micro-USB ESP32S (chip CP2102) sedang tidak dicolok; suplai daya 5V saat ini dihubungkan lewat port USB5V Type-C papan ekspansi GOOUUU V4.'
+      connectedTo: ['Kosong (daya utama dari UPS QF-M6001-2 → Switch 5V → header 5V/GND)'],
+      detail: 'Port Micro-USB ESP32S (CP2102) dipakai untuk flash/serial laptop. Matikan Switch 5V UPS ke posisi OFF (O) sebelum mencolok USB laptop.'
     },
     {
       id: 'esp-dc-jack', board: 'GOOUUU V4', pinName: 'Port DC6.5-16V (Barrel Jack)',
@@ -1376,11 +1425,11 @@ export function buildClickablePinRegistry() {
       detail: 'Port USB5V Type-C GOOUUU V4 bebas karena daya 5V utama sekarang disuplai tanpa putus dari modul UPS QF-M6001-2 (2×18650).'
     },
     {
-      id: 'esp-pwr-5v', board: 'GOOUUU V4 (Power)', pinName: 'Pin 5V (dari UPS+)',
+      id: 'esp-pwr-5v', board: 'GOOUUU V4 (Power)', pinName: 'Pin 5V (via Switch)',
       pos: getGoouuuPwrPinPos('5V').world, color: '#ef4444', status: 'AKTIF',
-      voltage: '5.0V DC (UPS)', wireIds: ['ups-esp-5v'],
-      connectedTo: ['UPS QF-M6001-2 UPS+ (5V)'],
-      detail: 'Menerima suplai 5V stabil tanpa jeda dari pad output UPS+ QF-M6001-2 (didukung 2 baterai 18650 paralel) untuk menyalakan ESP32.'
+      voltage: '5.0V DC (UPS)', wireIds: ['sw-esp-5v'],
+      connectedTo: ['Switch 5V OUT (dari UPS+)'],
+      detail: 'Menerima suplai 5V dari UPS QF-M6001-2 melalui saklar pemutus ON/OFF (Switch OUT) untuk menyalakan ESP32; lepas/matikan Switch sebelum flash USB.'
     },
     {
       id: 'esp-pwr-gnd', board: 'GOOUUU V4 (Power)', pinName: 'Pin GND (dari UPS−)',
@@ -1388,6 +1437,20 @@ export function buildClickablePinRegistry() {
       voltage: '0V GND', wireIds: ['ups-esp-gnd'],
       connectedTo: ['UPS QF-M6001-2 UPS− (GND)'],
       detail: 'Jalur balik ground 5V dari pad output UPS− QF-M6001-2 ke header GND GOOUUU V4.'
+    },
+    {
+      id: 'sw-ups-in', board: 'Switch 5V (KCD11)', pinName: 'Terminal IN (dari UPS+)',
+      pos: getUpsSwitchPinPos('IN').world, color: '#ef4444', status: 'AKTIF',
+      voltage: '5.0V DC In', wireIds: ['ups-sw-in'],
+      connectedTo: ['UPS QF-M6001-2 UPS+ (5V)'],
+      detail: 'Terminal masuk saklar pemutus 5V yang menerima tegangan dari pad solder UPS+.'
+    },
+    {
+      id: 'sw-ups-out', board: 'Switch 5V (KCD11)', pinName: 'Terminal OUT (ke ESP32 5V)',
+      pos: getUpsSwitchPinPos('OUT').world, color: '#22c55e', status: 'AKTIF',
+      voltage: '5.0V DC Out', wireIds: ['sw-esp-5v'],
+      connectedTo: ['ESP32 GOOUUU V4 5V'],
+      detail: 'Terminal keluar saklar pemutus 5V menuju pin 5V GOOUUU V4 (posisi OFF memutus rel 5V UPS agar aman flash via USB).'
     },
 
     // --- UPS QF-M6001-2 (5V Boost UPS + 2x 18650 Parallel Battery Holder) ---
@@ -1415,9 +1478,9 @@ export function buildClickablePinRegistry() {
     {
       id: 'ups-out-p', board: 'UPS QF-M6001-2', pinName: 'UPS+ (Output 5V)',
       pos: getUpsPadPos('UPS+').world, color: '#22c55e', status: 'AKTIF',
-      voltage: '5.0V Boost DC', wireIds: ['ups-esp-5v'],
-      connectedTo: ['ESP32 GOOUUU V4 5V'],
-      detail: 'Pad solder output positif UPS+ (induktor boost 2R2 + SS54 + 2×220µF 16V) menyuplai 5V tanpa putus ke ESP32 GOOUUU V4.'
+      voltage: '5.0V Boost DC', wireIds: ['ups-sw-in'],
+      connectedTo: ['Switch 5V IN (UPS+)'],
+      detail: 'Pad solder output positif UPS+ menuju terminal IN Switch 5V sebelum masuk ke pin 5V ESP32 GOOUUU V4.'
     },
     {
       id: 'ups-out-n', board: 'UPS QF-M6001-2', pinName: 'UPS− (Output GND)',
@@ -1429,14 +1492,14 @@ export function buildClickablePinRegistry() {
     {
       id: 'ups-bat-1', board: 'UPS QF-M6001-2', pinName: 'Baterai 18650 #1 (Belakang)',
       pos: getUpsPadPos('BAT1').world, color: '#0ea5e9', status: 'AKTIF',
-      voltage: '3.7–4.2V Li-Ion (Paralel)', wireIds: ['ups-esp-5v', 'ups-esp-gnd'],
+      voltage: '3.7–4.2V Li-Ion (Paralel)', wireIds: ['ups-sw-in', 'sw-esp-5v', 'ups-esp-gnd'],
       connectedTo: ['Bus Paralel Baterai + / −'],
       detail: 'Sel Li-Ion 18650 #1 terpasang paralel pada holder bawah PCB QF-M6001-2 (proteksi overcharge/overdischarge/short).'
     },
     {
       id: 'ups-bat-2', board: 'UPS QF-M6001-2', pinName: 'Baterai 18650 #2 (Depan)',
       pos: getUpsPadPos('BAT2').world, color: '#0ea5e9', status: 'AKTIF',
-      voltage: '3.7–4.2V Li-Ion (Paralel)', wireIds: ['ups-esp-5v', 'ups-esp-gnd'],
+      voltage: '3.7–4.2V Li-Ion (Paralel)', wireIds: ['ups-sw-in', 'sw-esp-5v', 'ups-esp-gnd'],
       connectedTo: ['Bus Paralel Baterai + / −'],
       detail: 'Sel Li-Ion 18650 #2 terpasang paralel dengan sel #1 untuk backup daya ESP32 hingga 20W max.'
     },
@@ -1797,9 +1860,10 @@ export function buildMacroPinCallouts() {
     { id: 'pin-aux-i2c', label: 'Aux INA219: D22 · D21 · VCC 3.3V',    pos: [pAux22[0] + 0.006, pAux22[1] + 0.020, pAux22[2] - 0.014], color: '#06b6d4', group: 'esp' },
     { id: 'pin-18',      label: 'GPIO18 → Servo Oranye (PWM)',         pos: [p18[0] + 0.026, p18[1] + 0.028, p18[2] - 0.006], color: '#ff9f0a', group: 'esp' },
     { id: 'pin-rtc-i2c', label: 'Tiny RTC: SCL·SDA·VCC·GND',           pos: [pRtc[0] + 0.018, pRtc[1] + 0.022, pRtc[2] - 0.010], color: '#38bdf8', group: 'esp' },
-    { id: 'pin-ups-in',  label: 'USB-C 5V IN → Charger U1 + Q1-Q4',    pos: [pUpsIn[0] - 0.008, pUpsIn[1] + 0.024, pUpsIn[2] - 0.018], color: '#38bdf8', group: 'ups' },
-    { id: 'pin-ups-ic',  label: 'Boost 2R2 · U4 · 3×SS54 · 4×220µF 16V', pos: [BOARD_ORIGINS.ups.x - 0.002, BOARD_ORIGINS.ups.y + 0.028, BOARD_ORIGINS.ups.z - 0.024], color: '#22c55e', group: 'ups' },
-    { id: 'pin-ups-out', label: 'UPS+ (5V) / UPS− → ESP32 5V/GND',     pos: [pUpsOut[0] - 0.018, pUpsOut[1] + 0.014, pUpsOut[2] + 0.016], color: '#ef4444', group: 'ups' },
+    { id: 'pin-ups-in',  label: 'USB-C 5V IN → Charger U1 + Q1-Q4',    pos: [pUpsIn[0] + 0.006, pUpsIn[1] + 0.010, pUpsIn[2] + 0.022], color: '#38bdf8', group: 'ups' },
+    { id: 'pin-ups-ic',  label: 'Boost 2R2 · U4 · 3×SS54 · 4×220µF 16V', pos: [BOARD_ORIGINS.ups.x + 0.004, BOARD_ORIGINS.ups.y + 0.028, BOARD_ORIGINS.ups.z - 0.024], color: '#22c55e', group: 'ups' },
+    { id: 'pin-ups-sw',  label: 'Switch 5V (I/O): Putus UPS+ saat Flash USB', pos: [BOARD_ORIGINS.upsSwitch.x - 0.024, BOARD_ORIGINS.upsSwitch.y + 0.034, BOARD_ORIGINS.upsSwitch.z - 0.012], color: '#ef4444', group: 'ups' },
+    { id: 'pin-ups-out', label: 'UPS+ → Switch → ESP32 5V · UPS− → GND', pos: [pUpsOut[0] - 0.034, pUpsOut[1] + 0.016, pUpsOut[2] + 0.008], color: '#ef4444', group: 'ups' },
     { id: 'pin-ups-bat', label: '2× Baterai 18650 (4.2V Paralel)',     pos: [pUpsBat[0], pUpsBat[1] - 0.008, pUpsBat[2] + 0.022], color: '#0ea5e9', group: 'ups' },
     { id: 'pin-ina-vin', label: 'VIN+ ← SCC LOAD+ · VIN− → XL4015 IN+', pos: [pInaVin[0] + 0.007, pInaVin[1] + 0.025, pInaVin[2] - 0.015], color: '#ff5722', group: 'ina219' },
     { id: 'pin-ina-ic',  label: 'IC INA219A (0x40) · Shunt R100 (0.1Ω)', pos: [BOARD_ORIGINS.ina219.x - 0.026, BOARD_ORIGINS.ina219.y + 0.018, BOARD_ORIGINS.ina219.z + 0.003], color: '#06b6d4', group: 'ina219' },
@@ -1812,4 +1876,75 @@ export function buildMacroPinCallouts() {
     { id: 'pin-watt',    label: 'Watt Meter: Panel → SCC',             pos: [pWatt[0] + 0.074, pWatt[1] + 0.048, pWatt[2] + 0.022], color: '#38bdf8', group: 'watt_scc' },
     { id: 'pin-scc-trm', label: 'SCC: +PV− · +BAT− · +LOAD−',          pos: [pScc[0] + 0.015, pScc[1] - 0.016, pScc[2] + 0.016], color: '#ff5722', group: 'watt_scc' }
   ];
+}
+
+export const HOTSPOT_WIRE_NET_MAP = {
+  panel:      ['pv'],
+  wattmeter:  ['pv'],
+  scc:        ['pv', 'bat', 'buck12v'],
+  ina219:     ['buck12v', 'ina219', 'gnd'],
+  xl4015:     ['buck12v', 'servo6v', 'gnd'],
+  breadboard: ['gnd'],
+  esp32:      ['usb', 'i2c', 'ldr', 'pwm', 'gnd'],
+  rtc:        ['i2c'],
+  ups_switch: ['usb'],
+  ups:        ['usb'],
+  ldr:        ['ldr'],
+  servo:      ['servo6v', 'pwm', 'gnd'],
+  battery:    ['bat']
+};
+
+/**
+ * Picks an unobstructed camera offset when focusing on any 3D pin coordinate,
+ * avoiding looking through the vertical mast or tall deck components.
+ */
+export function computeSmartCameraOffset(worldPoint) {
+  const [, y, z] = worldPoint || [0, 0.65, 0.1];
+  if (y < 0.45) {
+    // Battery clips near the floor
+    return [-0.14, 0.17, 0.28];
+  }
+  if (y > 1.15 && z < 0.01) {
+    // Upper rear Servo MG996R behind the mast
+    return [0.16, 0.10, -0.22];
+  }
+  if (y > 0.72 && z >= 0.01) {
+    // Watt Meter & SCC on front of mast
+    return [0.06, 0.08, 0.28];
+  }
+  if (z < 0.092) {
+    // Rear edge of electronics deck (Switch 5V, INA219 screw terminals, GOOUUU rear pins)
+    return [0.03, 0.155, 0.145];
+  }
+  return [0.045, 0.15, 0.20];
+}
+
+/**
+ * Computes a comfortable camera position & look target that frames an entire
+ * Dari -> Ke 3D cable spline cleanly in view.
+ */
+export function computeWireFrameCamera(points) {
+  if (!Array.isArray(points) || points.length === 0) {
+    return { pos: [0.35, 0.95, 0.55], target: [0, 0.7, 0.08] };
+  }
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (const pt of points) {
+    if (pt[0] < minX) minX = pt[0];
+    if (pt[1] < minY) minY = pt[1];
+    if (pt[2] < minZ) minZ = pt[2];
+    if (pt[0] > maxX) maxX = pt[0];
+    if (pt[1] > maxY) maxY = pt[1];
+    if (pt[2] > maxZ) maxZ = pt[2];
+  }
+  const cx = (minX + maxX) * 0.5;
+  const cy = (minY + maxY) * 0.5;
+  const cz = (minZ + maxZ) * 0.5;
+  const span = Math.max(0.14, Math.hypot(maxX - minX, maxY - minY, maxZ - minZ));
+  const dist = Math.min(2.2, Math.max(0.28, span * 1.45));
+  const zSign = (cy > 1.15 && cz < 0.01) ? -1 : 1;
+  return {
+    target: [cx, cy, cz],
+    pos: [cx + dist * 0.22, cy + dist * 0.42, cz + zSign * dist * 0.88]
+  };
 }

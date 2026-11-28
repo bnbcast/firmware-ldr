@@ -2604,4 +2604,109 @@ export function createBattery18650Texture(anisotropy) {
   return finalizeColorTex(c, anisotropy);
 }
 
+/**
+ * Carrier PCB silkscreen for the inline 5V UPS safety rocker switch (SW1 · I/O).
+ */
+export function createUpsSwitchCarrierTexture(anisotropy) {
+  const w = 512;
+  const h = 320;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+
+  // Deep matte dark-slate breakout board matching deck hardware
+  const bg = ctx.createLinearGradient(0, 0, w, h);
+  bg.addColorStop(0, '#133a27');
+  bg.addColorStop(1, '#0e2d1e');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = 'rgba(248, 250, 252, 0.72)';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(14, 14, w - 28, h - 28);
+
+  // Corner mounting holes
+  for (const [hx, hy] of [[34, 34], [w - 34, 34], [34, h - 34], [w - 34, h - 34]]) {
+    ctx.beginPath();
+    ctx.arc(hx, hy, 12, 0, Math.PI * 2);
+    ctx.fillStyle = '#d1d5db';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(hx, hy, 6, 0, Math.PI * 2);
+    ctx.fillStyle = '#111827';
+    ctx.fill();
+  }
+
+  // Left (OUT -> ESP32 5V) & Right (IN <- UPS+) solder pads aligned 1:1 with getUpsSwitchPinPos
+  const pxX = (xm) => (xm / 0.036 + 0.5) * w;
+  for (const [xm, lbl] of [[-0.0125, 'OUT'], [0.0125, 'IN']]) {
+    const px = pxX(xm);
+    ctx.beginPath();
+    ctx.arc(px, h * 0.5, 22, 0, Math.PI * 2);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(px, h * 0.5, 9, 0, Math.PI * 2);
+    ctx.fillStyle = '#334155';
+    ctx.fill();
+
+    ctx.fillStyle = '#fef08a';
+    ctx.font = '800 22px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl, px, h * 0.5 + 36);
+  }
+
+  // Crisp top & bottom silkscreen labels
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '800 24px "JetBrains Mono", monospace';
+  ctx.fillText('SW1 · SAKLAR 5V UPS', w * 0.5, 42);
+
+  ctx.fillStyle = '#93c5fd';
+  ctx.font = '700 17px "JetBrains Mono", monospace';
+  ctx.fillText('O: PUTUS (FLASH) | I: ON (UPS)', w * 0.5, h - 38);
+
+  return finalizeColorTex(c, anisotropy);
+}
+
+/**
+ * Red KCD11 boat-rocker actuator paddle top texture with crisp white 'O' & 'I' markings.
+ */
+export function createRockerPaddleTexture(anisotropy) {
+  const w = 256;
+  const h = 160;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+
+  const g = ctx.createLinearGradient(0, 0, w, 0);
+  g.addColorStop(0, '#b91c1c');
+  g.addColorStop(0.5, '#ef4444');
+  g.addColorStop(1, '#b91c1c');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  // Subtle anti-slip grip ridges at center
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
+  for (let rx = w * 0.5 - 12; rx <= w * 0.5 + 12; rx += 8) {
+    ctx.fillRect(rx - 1.5, 22, 3, h - 44);
+  }
+
+  // Left = 'O' (OFF), Right = 'I' (ON)
+  ctx.strokeStyle = '#ffffff';
+  ctx.fillStyle = '#ffffff';
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.arc(54, h * 0.5, 24, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillRect(w - 60, h * 0.5 - 24, 12, 48);
+
+  return finalizeColorTex(c, anisotropy);
+}
+
 

@@ -131,6 +131,7 @@ import {
   getGoouuuAuxPinPos,
   getGoouuuPwrPinPos,
   getUpsPadPos,
+  getUpsSwitchPinPos,
   getBreadboardGndPinPos,
   getIna219PinPos,
   getIna219ScrewPos,
@@ -141,7 +142,10 @@ import {
   SERVO_PLUG_PINS,
   buildPinAccurateWireSpecs,
   buildClickablePinRegistry,
-  buildMacroPinCallouts
+  buildMacroPinCallouts,
+  HOTSPOT_WIRE_NET_MAP,
+  computeSmartCameraOffset,
+  computeWireFrameCamera
 } from './docs/rig3d-wiring.js';
 
 test('hardware pinout tables and front vertical stack match user physical rig (Watt Meter -> SCC -> Deck with Breadboard GND)', () => {
@@ -255,13 +259,17 @@ test('buildPinAccurateWireSpecs and buildClickablePinRegistry cover every clicka
   assert.deepEqual(sdaWire.points[0], getGoouuuPinPos('rear', 5, 'S').world);
   assert.deepEqual(sdaWire.points[sdaWire.points.length - 1], getTinyRtcPinPos(3).world);
 
-  // Verify QF-M6001-2 UPS 5V -> GOOUUU V4 5V/GND power wiring & empty USB-C receptacle
+  // Verify QF-M6001-2 UPS 5V -> Inline Safety Switch (I/O) -> GOOUUU V4 5V/GND power wiring & empty USB-C receptacle
   const upsUsbInWire = wires.find((w) => w.id === 'usb-ups-5v-in');
-  const upsEsp5vWire = wires.find((w) => w.id === 'ups-esp-5v');
+  const upsSwInWire = wires.find((w) => w.id === 'ups-sw-in');
+  const swEsp5vWire = wires.find((w) => w.id === 'sw-esp-5v');
   const upsEspGndWire = wires.find((w) => w.id === 'ups-esp-gnd');
   assert.ok(upsUsbInWire, 'UPS USB-C 5V IN cable must exist');
-  assert.deepEqual(upsEsp5vWire.points[0], getUpsPadPos('UPS+').world);
-  assert.deepEqual(upsEsp5vWire.points[upsEsp5vWire.points.length - 1], getGoouuuPwrPinPos('5V').world);
+  assert.ok(BOARD_ORIGINS.upsSwitch, 'Inline 5V safety switch origin must exist');
+  assert.deepEqual(upsSwInWire.points[0], getUpsPadPos('UPS+').world);
+  assert.deepEqual(upsSwInWire.points[upsSwInWire.points.length - 1], getUpsSwitchPinPos('IN').world);
+  assert.deepEqual(swEsp5vWire.points[0], getUpsSwitchPinPos('OUT').world);
+  assert.deepEqual(swEsp5vWire.points[swEsp5vWire.points.length - 1], getGoouuuPwrPinPos('5V').world);
   assert.deepEqual(upsEspGndWire.points[0], getUpsPadPos('UPS-').world);
   assert.deepEqual(upsEspGndWire.points[upsEspGndWire.points.length - 1], getGoouuuPwrPinPos('GND').world);
 
@@ -296,6 +304,8 @@ test('buildPinAccurateWireSpecs and buildClickablePinRegistry cover every clicka
   assert.equal(pins.find((p) => p.id === 'esp-goouuu-usbc')?.status, 'KOSONG', 'GOOUUU V4 USB5V Type-C stays open while UPS powers 5V/GND');
   assert.equal(pins.find((p) => p.id === 'esp-pwr-5v')?.status, 'AKTIF');
   assert.equal(pins.find((p) => p.id === 'esp-pwr-gnd')?.status, 'AKTIF');
+  assert.equal(pins.find((p) => p.id === 'sw-ups-in')?.status, 'AKTIF');
+  assert.equal(pins.find((p) => p.id === 'sw-ups-out')?.status, 'AKTIF');
   assert.equal(pins.find((p) => p.id === 'ups-out-p')?.status, 'AKTIF');
   assert.equal(pins.find((p) => p.id === 'ups-out-n')?.status, 'AKTIF');
   assert.equal(pins.find((p) => p.id === 'ups-in-usbc')?.status, 'AKTIF');
@@ -306,6 +316,53 @@ test('buildPinAccurateWireSpecs and buildClickablePinRegistry cover every clicka
   assert.ok(callouts.length >= 16);
   assert.ok(callouts.some((c) => c.group === 'ina219'), 'Macro callouts must include INA219 group');
   assert.ok(callouts.some((c) => c.group === 'ups'), 'Macro callouts must include QF-M6001-2 UPS group');
+  assert.ok(callouts.some((c) => c.id === 'pin-ups-sw'), 'Macro callouts must include inline 5V safety switch');
+});
+
+test('HOTSPOT_WIRE_NET_MAP, computeSmartCameraOffset, and computeWireFrameCamera provide valid camera framing and net mappings', () => {
+  const expectedHotspots = [
+    'panel', 'wattmeter', 'scc', 'ina219', 'xl4015',
+    'breadboard', 'esp32', 'rtc', 'ups_switch', 'ups',
+    'ldr', 'servo', 'battery'
+  ];
+  for (const hs of expectedHotspots) {
+    const nets = HOTSPOT_WIRE_NET_MAP[hs];
+    assert.ok(Array.isArray(nets) && nets.length >= 1, `Hotspot ${hs} must map to >= 1 wire net`);
+    for (const nk of nets) {
+      assert.ok(WIRE_NET_META[nk], `Hotspot ${hs} references unknown net ${nk}`);
+    }
+  }
+
+  // Unobstructed smart offsets across floor battery, rear servo, front mast, rear deck, and front deck
+  const offBat = computeSmartCameraOffset([-0.15, 0.30, -0.05]);
+  const offServo = computeSmartCameraOffset([0.05, 1.32, -0.03]);
+  const offWatt = computeSmartCameraOffset([0.02, 1.00, 0.06]);
+  const offDeckRear = computeSmartCameraOffset([0.34, 0.63, 0.07]);
+  const offDeckFront = computeSmartCameraOffset([0.16, 0.63, 0.14]);
+  assert.ok(offServo[2] < 0, 'Rear upper servo should frame from -Z behind the mast');
+  assert.ok(offWatt[2] > 0 && offDeckFront[2] > 0, 'Front mast and front deck should frame from +Z');
+  for (const off of [offBat, offServo, offWatt, offDeckRear, offDeckFront]) {
+    assert.equal(off.length, 3);
+    assert.ok(off.every((n) => Number.isFinite(n)));
+    assert.ok(off[1] > 0, 'Camera offset should stay slightly elevated above the target pin');
+  }
+
+  // Wire framing covers every wire spec cleanly
+  const wires = buildPinAccurateWireSpecs();
+  assert.equal(wires.length, 32, 'Expected 32 total pin-accurate wires matching sidebar count');
+  for (const w of wires) {
+    const framed = computeWireFrameCamera(w.points);
+    assert.equal(framed.pos.length, 3);
+    assert.equal(framed.target.length, 3);
+    assert.ok(framed.pos.every((n) => Number.isFinite(n)));
+    assert.ok(framed.target.every((n) => Number.isFinite(n)));
+    const dist = Math.hypot(
+      framed.pos[0] - framed.target[0],
+      framed.pos[1] - framed.target[1],
+      framed.pos[2] - framed.target[2]
+    );
+    assert.ok(dist >= 0.27 && dist <= 2.3, `Wire ${w.id} frame distance out of expected range: ${dist}`);
+  }
 });
 
 

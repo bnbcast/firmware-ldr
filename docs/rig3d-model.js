@@ -30,7 +30,9 @@ import {
   createIna219Texture,
   createUpsQfM6001Texture,
   createCap220_16vTopTexture,
-  createBattery18650Texture
+  createBattery18650Texture,
+  createUpsSwitchCarrierTexture,
+  createRockerPaddleTexture
 } from './rig3d-textures.js';
 import { computePushrodGeometry } from './rig3d-math.js';
 import {
@@ -39,6 +41,7 @@ import {
   GOOUUU_GEO,
   INA219_GEO,
   UPS_GEO,
+  UPS_SWITCH_GEO,
   BREADBOARD_GEO,
   ACTIVE_DUPONT_PLUGS,
   SERVO_PLUG_PINS,
@@ -46,6 +49,7 @@ import {
   getGoouuuAuxPinPos,
   getGoouuuPwrPinPos,
   getUpsPadPos,
+  getUpsSwitchPinPos,
   getBreadboardGndPinPos,
   getIna219PinPos,
   getTinyRtcPinPos,
@@ -388,6 +392,8 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     bgHex: '#171b22',
     textHex: '#cbd5e1'
   });
+  const upsSwitchCarrierTex = createUpsSwitchCarrierTexture(maxAniso);
+  const rockerPaddleTex = createRockerPaddleTexture(maxAniso);
   disposables.push(
     solarFrontTex, solarBackTex, jboxTex, incoeTex, contactShadowTex,
     sccDisplay.texture, wattDisplay.texture, xl4015Tex, cap220TopTex, cap47TopTex,
@@ -395,7 +401,8 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     ams33Tex, cp2102Tex, tant107Tex, c226Tex, res103Tex, reg5vTex, ss24Tex, res102Tex,
     microUsbTopTex, usbCTopTex, coinCellTopTex, ds1307Tex, at24c32Tex, res332Tex, res201Tex, res514Tex, res155Tex,
     lm393Ldr1Tex, lm393Ldr2Tex, cdsTex, mg996rLabelTex, ina219Tex, r100Tex, ina219IcTex,
-    upsQfTex, cap220_16vTopTex, bat18650Tex, ss54Tex, ind2R2Tex, upsU1Tex, upsU4Tex, upsProtTex, upsMosTex
+    upsQfTex, cap220_16vTopTex, bat18650Tex, ss54Tex, ind2R2Tex, upsU1Tex, upsU4Tex, upsProtTex, upsMosTex,
+    upsSwitchCarrierTex, rockerPaddleTex
   );
 
   // Instanced geometry matrix collectors (world-space relative to root)
@@ -2181,9 +2188,91 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
   }
 
   hotspotAnchors.ups = new THREE.Object3D();
-  hotspotAnchors.ups.position.set(0.024, 0.056, -0.014);
+  hotspotAnchors.ups.position.set(0.036, 0.034, 0.018);
   upsGroup.add(hotspotAnchors.ups);
   hotspotProxies.push(addHotspotProxy(upsGroup, 'ups', [0.115, 0.056, 0.064], [0, -0.004, 0]));
+
+  // --- 6G. INLINE SAFETY ROCKER SWITCH (KCD11 I/O) ON UPS+ -> ESP32 5V LINE ---
+  const swGroup = new THREE.Group();
+  swGroup.name = 'Ups5vSwitchGroup';
+  swGroup.position.set(BOARD_ORIGINS.upsSwitch.x, BOARD_ORIGINS.upsSwitch.y, BOARD_ORIGINS.upsSwitch.z);
+  deckGroup.add(swGroup);
+
+  const swCarrierSideMat = new THREE.MeshStandardMaterial({ color: 0x0f3020, roughness: 0.42, metalness: 0.12 });
+  const swCarrierTopMat = new THREE.MeshStandardMaterial({
+    map: upsSwitchCarrierTex,
+    roughness: 0.34,
+    metalness: 0.12,
+    bumpMap: pcbBump,
+    bumpScale: 0.0005
+  });
+  const swCarrier = new THREE.Mesh(
+    new THREE.BoxGeometry(UPS_SWITCH_GEO.width, UPS_SWITCH_GEO.thick, UPS_SWITCH_GEO.depth),
+    [swCarrierSideMat, swCarrierSideMat, swCarrierTopMat, swCarrierSideMat, swCarrierSideMat, swCarrierSideMat]
+  );
+  swCarrier.castShadow = true;
+  swGroup.add(swCarrier);
+  const swTopY = UPS_SWITCH_GEO.thick * 0.5; // +0.0016
+
+  // Domed solder pads for IN (from UPS+) & OUT (to ESP32 5V) + terminal lugs
+  for (const padName of ['IN', 'OUT']) {
+    const ploc = getUpsSwitchPinPos(padName).local;
+    const swSolder = new THREE.Mesh(new THREE.SphereGeometry(0.0020, 12, 10), brushedSteelMat);
+    swSolder.scale.set(1.1, 0.65, 1.1);
+    swSolder.position.set(ploc[0], swTopY + 0.0007, ploc[2]);
+    const swLug = new THREE.Mesh(new THREE.BoxGeometry(0.0055, 0.0026, 0.0024), brushedSteelMat);
+    swLug.position.set(ploc[0] * 0.72, swTopY + 0.0013, ploc[2]);
+    swGroup.add(swSolder, swLug);
+  }
+
+  // Black ABS KCD11 Switch Housing + Bezel Flange
+  const swBody = new THREE.Mesh(new THREE.BoxGeometry(0.0155, 0.0102, 0.0114), darkPlasticMat);
+  swBody.position.set(0, swTopY + 0.0051, 0);
+  swBody.castShadow = true;
+  const swFlange = new THREE.Mesh(new THREE.BoxGeometry(0.0180, 0.0020, 0.0136), darkPlasticMat);
+  swFlange.position.set(0, swTopY + 0.0106, 0);
+  swFlange.castShadow = true;
+  swGroup.add(swBody, swFlange);
+
+  // Pivoting Red Boat-Rocker Actuator ('O' left = OFF / Flash USB, 'I' right = ON / UPS Power)
+  const switchPaddlePivot = new THREE.Group();
+  switchPaddlePivot.position.set(0, swTopY + 0.0118, 0);
+  swGroup.add(switchPaddlePivot);
+
+  const paddleSideMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.32, metalness: 0.06 });
+  const paddleTopMat = new THREE.MeshStandardMaterial({ map: rockerPaddleTex, roughness: 0.28, metalness: 0.06 });
+  const swPaddle = new THREE.Mesh(
+    new THREE.BoxGeometry(0.0136, 0.0038, 0.0092),
+    [paddleSideMat, paddleSideMat, paddleTopMat, paddleSideMat, paddleSideMat, paddleSideMat]
+  );
+  swPaddle.position.set(0, 0.0012, 0);
+  swPaddle.castShadow = true;
+  switchPaddlePivot.add(swPaddle);
+
+  // Status micro-LED on switch carrier beside OUT pad (green when 5V UPS is connected, dim off when cut)
+  const switchLedMat = new THREE.MeshStandardMaterial({
+    color: 0x22c55e,
+    emissive: 0x22c55e,
+    emissiveIntensity: 1.5,
+    roughness: 0.2
+  });
+  const swStatusLed = new THREE.Mesh(new THREE.BoxGeometry(0.0020, 0.0012, 0.0024), switchLedMat);
+  swStatusLed.position.set(-0.0130, swTopY + 0.0007, -0.0068);
+  swGroup.add(swStatusLed);
+
+  function setUpsSwitchState(isOn) {
+    // Tilt down toward 'I' (+X, -0.22 rad around Z) when ON, or toward 'O' (-X, +0.22 rad) when OFF
+    switchPaddlePivot.rotation.z = isOn ? -0.22 : 0.22;
+    switchLedMat.color.setHex(isOn ? 0x22c55e : 0x334155);
+    switchLedMat.emissive.setHex(isOn ? 0x22c55e : 0x000000);
+    switchLedMat.emissiveIntensity = isOn ? 1.55 : 0.0;
+  }
+  setUpsSwitchState(true);
+
+  hotspotAnchors.ups_switch = new THREE.Object3D();
+  hotspotAnchors.ups_switch.position.set(-0.012, 0.062, -0.014);
+  swGroup.add(hotspotAnchors.ups_switch);
+  hotspotProxies.push(addHotspotProxy(swGroup, 'ups_switch', [0.044, 0.028, 0.030], [0, 0.007, 0]));
 
   // ==========================================================================
   // 7. OVERHEAD SOLAR PANEL (FRONT CELLS PITCHED TOWARD +Z, SAME SIDE AS WATT METER & SCC!)
@@ -2564,6 +2653,7 @@ export function buildSolarTrackerRig(renderer, isSoftwareGl) {
     pinById,
     updateMechanics,
     updateTelemetryVisuals,
+    setUpsSwitchState,
     setWiringHighlight,
     setSelectionHighlight,
     setHoverPreview,

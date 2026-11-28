@@ -38,7 +38,7 @@
       <button class="nav-tab active" data-view="live">1. Monitor &amp; Servo</button>
       <button class="nav-tab" data-view="debug"><span id="debugTabLabel">2. Serial &amp; Log</span> <span id="faultCountBadge" class="mini-badge" style="display:none">0</span></button>
       <button class="nav-tab" data-view="check">3. Checklist &amp; Matriks</button>
-      <button class="nav-tab" data-view="twin3d">4. Kembaran 3D</button>
+      <button class="nav-tab" data-view="twin3d">4. Rendering 3D</button>
     </nav>
 
     <div class="topbar-right">
@@ -413,7 +413,7 @@
               <span class="label">INFO HARDWARE &amp; PANDUAN PIN LENGKAP (MG996R)</span>
             </div>
             <div class="hw-kv-list">
-              <div class="kv"><span>ESP32 &amp; Expansion</span><strong class="mono">NodeMCU-32S (38-Pin) + GOOUUU V4 (3.3V) · Daya via UPS QF-M6001-2 (2×18650) → 5V/GND</strong></div>
+              <div class="kv"><span>ESP32 &amp; Expansion</span><strong class="mono">NodeMCU-32S (38-Pin) + GOOUUU V4 (3.3V) · Daya via UPS QF-M6001-2 → Switch 5V → 5V/GND</strong></div>
               <div class="kv"><span>LDR 1 &amp; LDR 2</span><strong class="mono">AO → GPIO34 &amp; GPIO35 · VCC = 3.3V · GND = ESP32 (DO Kosong)</strong></div>
               <div class="kv"><span>Servo MG996R</span><strong class="mono">PWM → GPIO18 (P18) · VCC = 6V (XL4015) · Common GND (3 Kabel)</strong></div>
               <div class="kv"><span>RTC I2C &amp; EEPROM</span><strong class="mono" id="metaI2c">SDA=21 · SCL=22 · 0x68 · Err 0</strong></div>
@@ -428,129 +428,153 @@
       </div>
     </section>
 
-    <!-- ==================== VIEW 4: KEMBARAN DIGITAL 3D ==================== -->
+    <!-- ==================== VIEW 4: RENDERING 3D INTERAKTIF ==================== -->
     <section id="view-twin3d" class="view">
       <div class="rig3d-stage">
-        <div id="rig3dFullMount" class="rig3d-full-mount" aria-label="Tampilan 3D Interaktif SolarTracker"></div>
+        <div id="rig3dFullMount" class="rig3d-full-mount" aria-label="Tampilan Rendering 3D Interaktif SolarTracker"></div>
         <div id="rig3dHotspotLayer" class="rig3d-hotspot-layer"></div>
         <div id="rig3dPinCalloutLayer" class="rig3d-pin-callout-layer" style="display:none"></div>
         <div id="rig3dHoverTip" class="rig3d-hover-tip" style="display:none" aria-hidden="true"></div>
 
-        <!-- Top-left minimal telemetry HUD (zero backdrop-filter over WebGL) -->
+        <!-- Top-left clean compact telemetry HUD + collapsible ? Kontrol popover -->
         <div class="rig3d-hud-top">
-          <div class="rig3d-hud-title">Kembaran Digital 3D · SolarTracker</div>
+          <div class="rig3d-hud-head">
+            <div class="rig3d-hud-title">Rendering 3D · SolarTracker</div>
+            <button id="btnCamHelp" class="hud-help-btn" type="button" aria-expanded="false" aria-controls="rig3dHelpPopover" title="Lihat panduan mouse & keyboard">? Panduan</button>
+          </div>
           <div id="rig3dHudTelemetry" class="rig3d-hud-sub mono">Menghubungkan telemetri...</div>
-          <div id="rig3dDragHint" class="rig3d-hud-hint">Seret kiri = Putar bebas · Seret kanan = Geser · Scroll = Zoom · W/S / Shift+Scroll = Maju/Mundur · Q/E/↑↓ = Naik/Turun</div>
+          <div id="rig3dHelpPopover" class="rig3d-help-popover" style="display:none">
+            <div><strong>Putar kamera:</strong> Seret kiri</div>
+            <div><strong>Geser (pan):</strong> Seret kanan / tahan tombol panah</div>
+            <div><strong>Zoom:</strong> Scroll · <strong>Maju/Mundur:</strong> Shift+Scroll atau W/S</div>
+            <div><strong>Naik/Turun:</strong> Alt+Scroll atau Q/E/↑/↓</div>
+            <div><strong>Fokus cepat:</strong> Klik 2× titik mana saja di 3D</div>
+          </div>
         </div>
 
-        <!-- Compact Floating Freeform Camera Nav Pad (Maju/Mundur, Geser, Naik/Turun, Zoom, Reset) -->
+        <!-- Compact Floating Freeform Camera Nav Pad -->
         <div id="rig3dNavPad" class="rig3d-nav-pad" role="group" aria-label="Navigasi Kamera Freeform 3D">
-          <button id="btnCamFwd" class="nav-pad-btn nav-pad-wide" data-cam-hold="fwd" type="button" title="Maju Freeform (W / Shift+Scroll Atas)" aria-label="Maju Kamera">Maju</button>
-          <button id="btnCamBack" class="nav-pad-btn nav-pad-wide" data-cam-hold="back" type="button" title="Mundur Freeform (S / Shift+Scroll Bawah)" aria-label="Mundur Kamera">Mundur</button>
+          <button id="btnCamFwd" class="nav-pad-btn nav-pad-wide" data-cam-hold="fwd" type="button" title="Maju ke arah pandang (W / Shift+Scroll)" aria-label="Maju Kamera">Maju</button>
+          <button id="btnCamBack" class="nav-pad-btn nav-pad-wide" data-cam-hold="back" type="button" title="Mundur (S / Shift+Scroll)" aria-label="Mundur Kamera">Mundur</button>
           <span class="nav-pad-sep" aria-hidden="true"></span>
           <button id="btnCamLeft" class="nav-pad-btn" data-cam-hold="left" type="button" title="Geser Kiri (A / ←)" aria-label="Geser Kamera Kiri">←</button>
           <button id="btnCamRight" class="nav-pad-btn" data-cam-hold="right" type="button" title="Geser Kanan (D / →)" aria-label="Geser Kamera Kanan">→</button>
-          <button id="btnCamPanUp" class="nav-pad-btn" data-cam-hold="up" type="button" title="Naik / Atas (E / ↑)" aria-label="Geser Kamera ke Atas">↑</button>
-          <button id="btnCamPanDown" class="nav-pad-btn" data-cam-hold="down" type="button" title="Turun / Bawah (Q / ↓)" aria-label="Geser Kamera ke Bawah">↓</button>
+          <button id="btnCamPanUp" class="nav-pad-btn" data-cam-hold="up" type="button" title="Naik (E / ↑)" aria-label="Geser Kamera ke Atas">↑</button>
+          <button id="btnCamPanDown" class="nav-pad-btn" data-cam-hold="down" type="button" title="Turun (Q / ↓)" aria-label="Geser Kamera ke Bawah">↓</button>
           <span class="nav-pad-sep" aria-hidden="true"></span>
-          <button id="btnCamZoomIn" class="nav-pad-btn" type="button" title="Zoom In (+)" aria-label="Perbesar Kamera">+</button>
-          <button id="btnCamZoomOut" class="nav-pad-btn" type="button" title="Zoom Out (−)" aria-label="Perkecil Kamera">−</button>
+          <button id="btnCamZoomIn" class="nav-pad-btn" type="button" title="Perbesar (+)" aria-label="Perbesar Kamera">+</button>
+          <button id="btnCamZoomOut" class="nav-pad-btn" type="button" title="Perkecil (−)" aria-label="Perkecil Kamera">−</button>
           <span class="nav-pad-sep" aria-hidden="true"></span>
-          <button id="btnCamReset" class="nav-pad-btn" type="button" title="Reset Sudut Kamera" aria-label="Reset Kamera">⟲</button>
+          <button id="btnCamReset" class="nav-pad-btn nav-pad-wide" type="button" title="Reset Sudut Kamera (R)" aria-label="Reset Kamera">⟲ Reset</button>
         </div>
 
         <!-- Bottom-left easy-to-read Pin / Wire / Component Inspector Card -->
         <div id="rig3dInspector" class="rig3d-inspector" style="display:none" role="region" aria-label="Inspeksi Pin dan Kabel 3D">
           <div class="rig3d-insp-body">
             <div class="rig3d-insp-head-row">
-              <span id="rig3dInspBadge" class="rig3d-insp-badge">KABEL</span>
-              <span id="rig3dInspVolt" class="rig3d-insp-volt mono" style="display:none">--</span>
+              <div class="rig3d-insp-meta-left">
+                <span id="rig3dInspBadge" class="rig3d-insp-badge">KABEL</span>
+                <span id="rig3dInspVolt" class="rig3d-insp-volt mono" style="display:none">--</span>
+              </div>
+              <div class="rig3d-insp-actions">
+                <button id="btnInspBack" class="insp-act-btn" type="button" style="display:none" title="Kembali ke pilihan sebelumnya">← Kembali</button>
+                <button id="btnInspFocus" class="insp-act-btn" type="button" style="display:none" title="Arahkan kamera ke bagian ini">Fokus</button>
+                <button id="btnRig3dInspClose" class="rig3d-insp-close" type="button" title="Tutup Inspeksi (Esc)" aria-label="Tutup Inspeksi">×</button>
+              </div>
             </div>
             <div id="rig3dInspTitle" class="rig3d-insp-title">--</div>
             <div id="rig3dInspRoute" class="rig3d-insp-route" style="display:none"></div>
+            <div id="rig3dInspRelated" class="rig3d-insp-related" style="display:none"></div>
             <div id="rig3dInspMetrics" class="rig3d-insp-metrics mono" style="display:none">--</div>
             <div id="rig3dInspWiring" class="rig3d-insp-wiring">--</div>
           </div>
-          <button id="btnRig3dInspClose" class="rig3d-insp-close" type="button" title="Tutup Inspeksi (Esc)" aria-label="Tutup Inspeksi">×</button>
         </div>
 
         <!-- Reopen trigger when right-side control panel is collapsed -->
         <button id="btnSidePanelReopen" class="rig3d-side-reopen" type="button" style="display:none" aria-label="Tampilkan Panel Kontrol 3D">☰ Kontrol 3D (H)</button>
 
-        <!-- Collapsible Right-Side Control Panel (zero obstruction on tall front-stacked rig!) -->
-        <aside id="rig3dSidePanel" class="rig3d-side-panel" aria-label="Panel Kontrol Kembaran 3D">
+        <!-- Clean Collapsible Right-Side Control Panel -->
+        <aside id="rig3dSidePanel" class="rig3d-side-panel" aria-label="Panel Kontrol Rendering 3D">
           <div class="side-panel-head">
             <span class="side-panel-title">Kontrol 3D</span>
             <button id="btnSidePanelToggle" class="side-collapse-btn" type="button" aria-expanded="true" title="Sembunyikan Panel (H)">Sembunyikan ›</button>
           </div>
 
+          <div class="side-quick-bar" aria-label="Alat Bantu Inspeksi">
+            <button id="btnToggleWiring" class="dock-btn" type="button" title="Sorot seluruh jalur kabel 3D">Sorot Kabel</button>
+            <button id="btnTogglePinLabels" class="dock-btn" type="button" title="Tampilkan label pin pada area fokus">Label Pin</button>
+            <button id="btnToggleHotspots" class="dock-btn active" type="button" title="Tampilkan tombol nama komponen di 3D">Pin Info</button>
+            <button id="btnResetSelection" class="dock-btn" type="button" title="Bersihkan pilihan & reset tampilan">Reset</button>
+          </div>
+
+          <div class="side-tabs-bar" role="tablist" aria-label="Kategori Kontrol 3D">
+            <button class="side-tab-btn active" type="button" role="tab" aria-selected="true" data-panel-tab="focus">Fokus Area</button>
+            <button class="side-tab-btn" type="button" role="tab" aria-selected="false" data-panel-tab="wires">Jalur Kabel</button>
+          </div>
+
           <div class="side-panel-scroll">
-            <div class="side-section">
-              <div class="side-section-lbl">KAMERA CEPAT</div>
-              <div class="side-cam-grid" role="group" aria-label="Preset Kamera 3D">
+            <div class="side-tab-pane active" data-panel-pane="focus">
+              <div class="side-group-lbl">Umum</div>
+              <div class="side-cam-grid" role="group" aria-label="Preset Kamera Umum">
                 <button class="dock-btn active" type="button" data-3d-cam="overview">Seluruh Rig</button>
-                <button class="dock-btn" type="button" data-3d-cam="front">Depan Stack</button>
+                <button class="dock-btn" type="button" data-3d-cam="front">Tampak Depan</button>
+              </div>
+
+              <div class="side-group-lbl">Daya 12V &amp; Servo</div>
+              <div class="side-cam-grid" role="group" aria-label="Preset Kamera Daya">
                 <button class="dock-btn" type="button" data-3d-cam="watt_scc">Watt &amp; SCC</button>
+                <button class="dock-btn" type="button" data-3d-cam="power">Aki INCOE 12V</button>
                 <button class="dock-btn" type="button" data-3d-cam="ina219">INA219 (12V)</button>
                 <button class="dock-btn" type="button" data-3d-cam="xl4015">XL4015 Merah</button>
-                <button class="dock-btn" type="button" data-3d-cam="breadboard">Breadboard GND</button>
+                <button class="dock-btn side-span-2" type="button" data-3d-cam="rear">Servo MG996R</button>
+              </div>
+
+              <div class="side-group-lbl">Kontrol, Sensor &amp; UPS</div>
+              <div class="side-cam-grid" role="group" aria-label="Preset Kamera Kontrol">
                 <button class="dock-btn" type="button" data-3d-cam="esp_pins">Pin ESP32</button>
+                <button class="dock-btn" type="button" data-3d-cam="breadboard">Breadboard GND</button>
                 <button class="dock-btn" type="button" data-3d-cam="tiny_rtc">Tiny RTC</button>
-                <button class="dock-btn" type="button" data-3d-cam="ups">UPS 5V (2×18650)</button>
                 <button class="dock-btn" type="button" data-3d-cam="ldr">Sekat LDR</button>
-                <button class="dock-btn" type="button" data-3d-cam="rear">Servo MG996R</button>
-                <button class="dock-btn" type="button" data-3d-cam="power">Aki INCOE 12V</button>
+                <button class="dock-btn" type="button" data-3d-cam="ups_switch">Switch 5V UPS</button>
+                <button class="dock-btn" type="button" data-3d-cam="ups">UPS 5V (2×18650)</button>
               </div>
+
+              <div class="side-tip-note">Klik langsung komponen, pin, atau kabel di 3D. Klik 2× pada titik mana saja untuk memindahkan pusat putar kamera.</div>
             </div>
 
-            <div class="side-section">
-              <div class="side-section-lbl">INSPEKSI PIN &amp; KABEL</div>
-              <div class="side-cam-grid">
-                <button id="btnToggleWiring" class="dock-btn" type="button">Sorot Kabel</button>
-                <button id="btnTogglePinLabels" class="dock-btn" type="button">Label Pin</button>
-                <button id="btnToggleHotspots" class="dock-btn active" type="button">Pin Komponen</button>
-                <button id="btnResetSelection" class="dock-btn" type="button">Reset Pilihan</button>
-              </div>
-              <div class="side-tip-note">Tip: Klik langsung kabel atau ujung pin mana saja di 3D untuk melihat jalur <strong>Dari → Ke</strong>.</div>
-            </div>
-
-            <div class="side-section">
-              <div class="side-section-lbl">FILTER JALUR KABEL</div>
+            <div class="side-tab-pane" data-panel-pane="wires">
               <div id="rig3dWiringLegend" class="side-wire-list" aria-label="Filter Jalur Kabel Pin-ke-Pin">
-                <button type="button" class="wire-chip active" data-wire-net="">Semua Kabel</button>
+                <button type="button" class="wire-chip active" data-wire-net="">Semua Kabel (32)</button>
                 <button type="button" class="wire-chip" data-wire-net="gnd"><span class="wire-dot" style="background:#00d4ff"></span>Common GND (4 Kabel)</button>
                 <button type="button" class="wire-chip" data-wire-net="pv"><span class="wire-dot" style="background:#ff3b30"></span>Panel → Watt → SCC</button>
                 <button type="button" class="wire-chip" data-wire-net="bat"><span class="wire-dot" style="background:#ef4444"></span>Aki 12V ↔ SCC</button>
-                <button type="button" class="wire-chip" data-wire-net="buck12v"><span class="wire-dot" style="background:#ff5722"></span>SCC LOAD 12V → INA219 → XL4015</button>
+                <button type="button" class="wire-chip" data-wire-net="buck12v"><span class="wire-dot" style="background:#ff5722"></span>SCC LOAD → INA219 → XL4015</button>
                 <button type="button" class="wire-chip" data-wire-net="ina219"><span class="wire-dot" style="background:#06b6d4"></span>INA219 (I2C &amp; Shunt 12V)</button>
                 <button type="button" class="wire-chip" data-wire-net="servo6v"><span class="wire-dot" style="background:#ff69b4"></span>XL4015 6V → Servo Merah</button>
                 <button type="button" class="wire-chip" data-wire-net="pwm"><span class="wire-dot" style="background:#ff9f0a"></span>GPIO18 → Servo Oranye</button>
-                <button type="button" class="wire-chip" data-wire-net="i2c"><span class="wire-dot" style="background:#2ecc71"></span>Bus I2C (RTC &amp; INA219 ↔ ESP32)</button>
+                <button type="button" class="wire-chip" data-wire-net="i2c"><span class="wire-dot" style="background:#2ecc71"></span>Bus I2C (RTC &amp; INA219)</button>
                 <button type="button" class="wire-chip" data-wire-net="ldr"><span class="wire-dot" style="background:#a855f7"></span>LDR 1 &amp; 2 ↔ ESP32</button>
-                <button type="button" class="wire-chip" data-wire-net="usb"><span class="wire-dot" style="background:#22c55e"></span>UPS 5V (2×18650) → ESP32</button>
+                <button type="button" class="wire-chip" data-wire-net="usb"><span class="wire-dot" style="background:#22c55e"></span>UPS 5V → Switch → ESP32</button>
               </div>
+              <div class="side-tip-note">Klik salah satu jalur untuk menyorot kabelnya, lalu klik ujung pin <strong>DARI → KE</strong> untuk menelusuri sambungan.</div>
             </div>
+          </div>
 
-            <div class="side-section">
-              <div class="side-section-lbl">LINGKUNGAN</div>
-              <div class="side-seg-2" role="group" aria-label="Lingkungan">
-                <button class="dock-btn active" type="button" data-3d-env="outdoor">Luar Ruangan</button>
-                <button class="dock-btn" type="button" data-3d-env="workshop">Studio Bengkel</button>
-              </div>
+          <div class="side-footer-controls">
+            <div class="side-group-lbl">Suasana &amp; Uji Cahaya</div>
+            <div class="side-seg-2" role="group" aria-label="Lingkungan">
+              <button class="dock-btn active" type="button" data-3d-env="outdoor">Luar Ruangan</button>
+              <button class="dock-btn" type="button" data-3d-env="workshop">Studio Bengkel</button>
             </div>
-
-            <div class="side-section">
-              <div class="side-section-lbl">MODE CAHAYA &amp; UJI SENTER</div>
-              <div class="side-seg-2" role="group" aria-label="Mode Cahaya">
-                <button class="dock-btn active" type="button" data-3d-lightmode="live">Data Nyata</button>
-                <button class="dock-btn" type="button" data-3d-lightmode="test">Uji Senter</button>
-              </div>
-              <div id="rig3dLightSliderWrap" class="rig3d-light-slider-wrap" style="display:none">
-                <span class="dock-mini-lbl">Kiri</span>
-                <input id="rig3dLightSlider" type="range" min="12" max="168" value="90" aria-label="Sudut Cahaya 3D">
-                <span class="dock-mini-lbl">Kanan</span>
-                <span id="rig3dLightDegVal" class="mono dock-deg-val">90°</span>
-              </div>
+            <div class="side-seg-2" role="group" aria-label="Mode Cahaya">
+              <button class="dock-btn active" type="button" data-3d-lightmode="live">Data Nyata</button>
+              <button class="dock-btn" type="button" data-3d-lightmode="test">Uji Senter</button>
+            </div>
+            <div id="rig3dLightSliderWrap" class="rig3d-light-slider-wrap" style="display:none">
+              <span class="dock-mini-lbl">Kiri</span>
+              <input id="rig3dLightSlider" type="range" min="12" max="168" value="90" aria-label="Sudut Cahaya 3D">
+              <span class="dock-mini-lbl">Kanan</span>
+              <span id="rig3dLightDegVal" class="mono dock-deg-val">90°</span>
             </div>
           </div>
         </aside>

@@ -21,7 +21,12 @@ import {
   worldPosToLightArc,
   computeElectricalEstimate
 } from './rig3d-math.js';
-import { WIRE_NET_META } from './rig3d-wiring.js';
+import {
+  WIRE_NET_META,
+  HOTSPOT_WIRE_NET_MAP,
+  computeSmartCameraOffset,
+  computeWireFrameCamera
+} from './rig3d-wiring.js';
 
 const CAMERA_PRESETS = {
   overview:   { pos: [1.30, 1.86, 2.48],   target: [0.06, 0.80, 0.06] },
@@ -32,7 +37,8 @@ const CAMERA_PRESETS = {
   breadboard: { pos: [-0.042, 0.80, 0.26], target: [-0.042, 0.625, 0.126] },
   esp_pins:   { pos: [0.165, 0.78, 0.24],  target: [0.160, 0.628, 0.118] },
   tiny_rtc:   { pos: [0.308, 0.75, 0.195], target: [0.305, 0.628, 0.118] },
-  ups:        { pos: [0.422, 0.758, 0.292], target: [0.448, 0.630, 0.119] },
+  ups_switch: { pos: [0.352, 0.745, 0.215], target: [0.348, 0.625, 0.082] },
+  ups:        { pos: [0.415, 0.772, 0.318], target: [0.422, 0.630, 0.105] },
   ldr:        { pos: [-0.43, 0.81, 0.29],  target: [-0.43, 0.635, 0.115] },
   rear:       { pos: [0.36, 1.28, -0.76],  target: [0.02, 1.20, -0.03] },
   power:      { pos: [-0.56, 0.44, 0.90],  target: [-0.14, 0.30, -0.04] }
@@ -41,6 +47,7 @@ const CAMERA_PRESETS = {
 const MACRO_PRESET_GROUPS = {
   esp_pins: 'esp',
   tiny_rtc: 'esp',
+  ups_switch: 'ups',
   ina219: 'ina219',
   breadboard: 'breadboard',
   xl4015: 'xl4015',
@@ -83,17 +90,22 @@ const HOTSPOT_META = {
   esp32: {
     title: 'ESP32 NodeMCU-32S + GOOUUU V4',
     preset: 'esp_pins',
-    wiring: 'Suplai 5V uninterrupted dari UPS QF-M6001-2 (UPS+/UPS− → 5V/GND). LDR 1 & 2, Tiny RTC, INA219 nyambung ke ESP32; GPIO18 → Servo Oranye; USB5V kosong.'
+    wiring: 'Suplai 5V dari UPS QF-M6001-2 lewat Switch 5V (UPS+ → Switch → 5V, UPS− → GND). Matikan Switch (O) sebelum colok USB laptop untuk flash.'
   },
   rtc: {
     title: 'Tiny RTC HW-111 (DS1307 + AT24C32)',
     preset: 'tiny_rtc',
     wiring: 'Nyambung langsung ke ESP32: SCL→GPIO22, SDA→GPIO21, VCC→3.3V, GND→ESP32 GND (SQ/DS/BAT kosong).'
   },
+  ups_switch: {
+    title: 'Switch Pengaman 5V UPS (KCD11 I/O)',
+    preset: 'ups_switch',
+    wiring: 'Terpasang seri di kabel merah UPS+ → GOOUUU V4 5V. Posisi I (ON) menyalurkan 5V UPS ke ESP32; posisi O (OFF) memutus 5V UPS agar aman flash ESP32 via USB laptop.'
+  },
   ups: {
     title: 'UPS 5V QF-M6001-2 (2×18650)',
     preset: 'ups',
-    wiring: 'USB-C 5V IN → Charger U1 (TP4056) & 2×18650 paralel (Proteksi U2/U3 DW01+8205) → Boost 2R2 / U4 (FP6298) + 3× SS54 + 4× 220µF 16V → UPS+ (5V) / UPS− (GND) → ESP32 5V/GND.'
+    wiring: 'USB-C 5V IN → Charger U1 (TP4056) & 2×18650 paralel (U2/U3 DW01+8205) → Boost 2R2/U4 → UPS+ (5V) → Switch 5V → ESP32 5V · UPS− → GND.'
   },
   ldr: {
     title: 'LDR 1 & LDR 2 + Sekat Hitam',
@@ -171,7 +183,7 @@ class SolarTrackerDigitalTwin {
     }
     this.isSoftwareGl = probe.isSoftwareGl;
 
-    this.slot = 'hidden'; // 'full' | 'hidden' (3D renders exclusively in Tab 4 Kembaran 3D)
+    this.slot = 'hidden'; // 'full' | 'hidden' (3D renders exclusively in Tab 4 Rendering 3D)
     this.envMode = 'outdoor'; // 'outdoor' | 'workshop'
     this.lightTestMode = false;
     this.showHotspots = true;
@@ -183,6 +195,13 @@ class SolarTrackerDigitalTwin {
     this.selectedWireId = null;
     this.selectedPinId = null;
     this.sideCollapsed = false;
+    this.sidePanelTab = 'focus';
+    this.helpOpen = false;
+    this.upsSwitchOn = true;
+
+    this.inspHistory = [];
+    this.currentInspState = null;
+    this.currentInspFocusFn = null;
 
     this.manualLightDeg = 90;
     this.manualLightEl = 44;
@@ -199,6 +218,7 @@ class SolarTrackerDigitalTwin {
 
     this.camFlyTargetPos = null;
     this.camFlyTargetLook = null;
+    this.camVelocity = new THREE.Vector3();
     this.freeMoveImpulse = new THREE.Vector3();
     this.freeZoomImpulse = 0;
     this.keysHeld = new Set();
@@ -503,23 +523,29 @@ class SolarTrackerDigitalTwin {
   initControlsAndEvents() {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = !this.isSoftwareGl;
-    this.controls.dampingFactor = 0.08;
+    this.controls.dampingFactor = 0.11;
     this.controls.screenSpacePanning = true;
     // Disable zoomToCursor to eliminate OrbitControls cursor-ray jitter/shake during scroll zoom
     this.controls.zoomToCursor = false;
-    this.controls.minDistance = 0.04;
-    this.controls.maxDistance = 9.0;
+    this.controls.minDistance = 0.05;
+    this.controls.maxDistance = 8.5;
     // Full freeform 360° spherical orbit without fighting floor clamp
     this.controls.minPolarAngle = 0.02;
     this.controls.maxPolarAngle = Math.PI - 0.02;
-    this.controls.zoomSpeed = 0.90;
-    this.controls.panSpeed = 1.15;
-    this.controls.rotateSpeed = 0.85;
+    this.controls.zoomSpeed = 1.08;
+    this.controls.panSpeed = 1.35;
+    this.controls.rotateSpeed = 0.98;
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.PAN,
+      RIGHT: THREE.MOUSE.PAN
+    };
     this.controls.target.set(...CAMERA_PRESETS.overview.target);
 
     this.controls.addEventListener('start', () => {
       this.camFlyTargetPos = null;
       this.camFlyTargetLook = null;
+      this.camVelocity.set(0, 0, 0);
       this.hideHoverTip();
     });
 
@@ -531,13 +557,14 @@ class SolarTrackerDigitalTwin {
       if (this.slot !== 'full') return;
       this.camFlyTargetPos = null;
       this.camFlyTargetLook = null;
+      this.camVelocity.set(0, 0, 0);
       this.hideHoverTip();
       if (e.shiftKey || e.altKey) {
         e.preventDefault();
         e.stopImmediatePropagation();
         const dist = this.camera.position.distanceTo(this.controls.target);
         const dir = e.deltaY < 0 ? 1 : -1;
-        const step = dir * clamp(dist * 0.16, 0.035, 0.36);
+        const step = dir * clamp(dist * 0.18, 0.04, 0.40);
         if (e.altKey) {
           this.queueFreeformMove(0, step, 0);
         } else {
@@ -545,6 +572,28 @@ class SolarTrackerDigitalTwin {
         }
       }
     }, { passive: false, capture: true });
+
+    // Double-click any 3D object, wire, or pin to smoothly re-center the orbit pivot there
+    dom.addEventListener('dblclick', (e) => {
+      if (this.slot !== 'full' || this.draggingLight) return;
+      e.preventDefault();
+      this.updateMouseNdc(e);
+      this._raycaster.layers.set(0);
+      this._raycaster.setFromCamera(this._mouseNdc, this.camera);
+      const hits = this._raycaster.intersectObject(this.rig.root, true);
+      if (hits.length > 0) {
+        const pt = hits[0].point;
+        this.focusOrbitPivotOnPoint([pt.x, pt.y, pt.z]);
+        return;
+      }
+      const target = this.raycastInteractiveTarget(e);
+      if (target?.type === 'pin') {
+        this.focusOrbitPivotOnPoint(target.data.pos);
+      } else if (target?.type === 'wire') {
+        const pts = target.data.points;
+        this.focusOrbitPivotOnPoint(pts[Math.floor(pts.length / 2)]);
+      }
+    });
 
     let downX = 0;
     let downY = 0;
@@ -670,6 +719,7 @@ class SolarTrackerDigitalTwin {
       breadboard: 'Breadboard GND',
       esp32: 'ESP32 + GOOUUU',
       rtc: 'Tiny RTC',
+      ups_switch: 'Switch 5V UPS',
       ups: 'UPS 5V (2×18650)',
       ldr: 'Sekat LDR',
       servo: 'Servo MG996R',
@@ -699,6 +749,8 @@ class SolarTrackerDigitalTwin {
       el.className = 'rig3d-pin-callout mono';
       el.dataset.pinGroup = item.group;
       el.style.borderLeftColor = item.color;
+      el.style.opacity = '0';
+      el.style.display = 'none';
       el.textContent = item.label;
       this.pinCalloutLayer.appendChild(el);
       this.pinCalloutNodes.push({ ...item, el });
@@ -713,15 +765,53 @@ class SolarTrackerDigitalTwin {
     if (btn) btn.classList.toggle('active', this.showPinLabels);
     if (this.pinCalloutLayer) {
       this.pinCalloutLayer.style.display = this.showPinLabels ? 'block' : 'none';
+      if (this.showPinLabels) this.updateProjectedOverlays();
     }
   }
 
-  renderInspectorCard({ badgeText, badgeColor, voltageText, titleText, routeHtml, descText, extraMetrics }) {
+  pushCurrentToHistory(nextState) {
+    const cur = this.currentInspState;
+    if (!cur || !nextState) return;
+    if (cur.type === nextState.type && cur.id === nextState.id) return;
+    this.inspHistory.push(cur);
+    if (this.inspHistory.length > 16) this.inspHistory.shift();
+  }
+
+  updateInspActionButtons() {
+    const btnBack = document.getElementById('btnInspBack');
+    const btnFocus = document.getElementById('btnInspFocus');
+    if (btnBack) {
+      btnBack.style.display = this.inspHistory.length > 0 ? 'inline-flex' : 'none';
+    }
+    if (btnFocus) {
+      btnFocus.style.display = this.currentInspFocusFn ? 'inline-flex' : 'none';
+    }
+  }
+
+  goBackInspector() {
+    const prev = this.inspHistory.pop();
+    if (!prev) {
+      this.updateInspActionButtons();
+      return;
+    }
+    if (prev.type === 'wire') {
+      this.selectWire(prev.id, true, true);
+    } else if (prev.type === 'pin') {
+      this.selectPin(prev.id, true, true);
+    } else if (prev.type === 'hotspot') {
+      this.selectHotspot(prev.id, true);
+    } else if (prev.type === 'net') {
+      this.setWiringNetFocus(prev.id, true);
+    }
+  }
+
+  renderInspectorCard({ badgeText, badgeColor, voltageText, titleText, routeHtml, relatedHtml, descText, extraMetrics }) {
     const card = document.getElementById('rig3dInspector');
     const badgeEl = document.getElementById('rig3dInspBadge');
     const voltEl = document.getElementById('rig3dInspVolt');
     const titleEl = document.getElementById('rig3dInspTitle');
     const routeEl = document.getElementById('rig3dInspRoute');
+    const relatedEl = document.getElementById('rig3dInspRelated');
     const metricsEl = document.getElementById('rig3dInspMetrics');
     const wiringEl = document.getElementById('rig3dInspWiring');
     if (!card || !titleEl) return;
@@ -736,20 +826,62 @@ class SolarTrackerDigitalTwin {
     }
     titleEl.textContent = titleText || '--';
 
+    const bindJumpTargets = (container) => {
+      container.querySelectorAll('[data-jump-pin]').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const pid = btn.dataset.jumpPin;
+          if (pid) this.selectPin(pid, true);
+        });
+      });
+      container.querySelectorAll('[data-jump-wire]').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const wid = btn.dataset.jumpWire;
+          if (wid) this.selectWire(wid, true);
+        });
+      });
+      container.querySelectorAll('[data-jump-net]').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const nkey = btn.dataset.jumpNet;
+          if (nkey) {
+            this.setSidePanelTab('wires');
+            this.setWiringNetFocus(nkey);
+          }
+        });
+      });
+      container.querySelectorAll('[data-toggle-ups-switch]').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          this.upsSwitchOn = !this.upsSwitchOn;
+          if (this.rig?.setUpsSwitchState) {
+            this.rig.setUpsSwitchState(this.upsSwitchOn);
+          }
+          this.refreshInspectorContent();
+        });
+      });
+    };
+
     if (routeEl) {
       if (routeHtml) {
         routeEl.innerHTML = routeHtml;
         routeEl.style.display = 'flex';
-        routeEl.querySelectorAll('[data-jump-pin]').forEach((btn) => {
-          btn.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            const pid = btn.dataset.jumpPin;
-            if (pid) this.selectPin(pid, true);
-          });
-        });
+        bindJumpTargets(routeEl);
       } else {
         routeEl.innerHTML = '';
         routeEl.style.display = 'none';
+      }
+    }
+
+    if (relatedEl) {
+      if (relatedHtml) {
+        relatedEl.innerHTML = relatedHtml;
+        relatedEl.style.display = 'flex';
+        bindJumpTargets(relatedEl);
+      } else {
+        relatedEl.innerHTML = '';
+        relatedEl.style.display = 'none';
       }
     }
 
@@ -760,6 +892,7 @@ class SolarTrackerDigitalTwin {
     if (wiringEl) {
       wiringEl.textContent = descText || '';
     }
+    this.updateInspActionButtons();
     card.style.display = 'flex';
   }
 
@@ -768,6 +901,9 @@ class SolarTrackerDigitalTwin {
     this.selectedWireId = null;
     this.selectedPinId = null;
     this.focusedWireNet = null;
+    this.inspHistory = [];
+    this.currentInspState = null;
+    this.currentInspFocusFn = null;
     Object.values(this.hotspotButtons || {}).forEach((b) => b.classList.remove('selected'));
     document.querySelectorAll('[data-wire-net]').forEach((c) => {
       c.classList.toggle('active', (c.dataset.wireNet || '') === '');
@@ -776,27 +912,68 @@ class SolarTrackerDigitalTwin {
       this.rig.setSelectionHighlight([], null, []);
       this.rig.setWiringHighlight(this.wiringHighlight, null);
     }
+    this.updateInspActionButtons();
     const card = document.getElementById('rig3dInspector');
     if (card) card.style.display = 'none';
+  }
+
+  focusOrbitPivotOnPoint(pt) {
+    if (!pt || !this.camera || !this.controls) return;
+    const target = new THREE.Vector3(pt[0], pt[1], pt[2]);
+    const dir = this._vec3.subVectors(this.camera.position, this.controls.target);
+    const curDist = dir.length();
+    if (curDist > 1e-4) dir.normalize();
+    else dir.set(0.25, 0.45, 0.85).normalize();
+
+    const nextDist = clamp(curDist * 0.58, 0.24, 1.35);
+    const pos = target.clone().addScaledVector(dir, nextDist);
+    pos.y = Math.max(0.10, pos.y);
+    this.camVelocity.set(0, 0, 0);
+    this.freeMoveImpulse.set(0, 0, 0);
+    this.camFlyTargetLook = target;
+    this.camFlyTargetPos = pos;
   }
 
   focusCameraOnPoint(pt) {
     if (!pt) return;
     const p = new THREE.Vector3(pt[0], pt[1], pt[2]);
-    // Keep a gentle readable viewing angle slightly above and in front (+Z) of the selected pin
-    const offset = new THREE.Vector3(0.05, 0.16, 0.22);
+    const off = computeSmartCameraOffset(pt);
+    this.camVelocity.set(0, 0, 0);
+    this.freeMoveImpulse.set(0, 0, 0);
     this.camFlyTargetLook = p.clone();
-    this.camFlyTargetPos = p.clone().add(offset);
+    this.camFlyTargetPos = p.clone().add(new THREE.Vector3(off[0], off[1], off[2]));
+  }
+
+  focusCameraOnWire(wireSpec) {
+    if (!wireSpec?.points) return;
+    const framed = computeWireFrameCamera(wireSpec.points);
+    this.camVelocity.set(0, 0, 0);
+    this.freeMoveImpulse.set(0, 0, 0);
+    this.camFlyTargetLook = new THREE.Vector3(...framed.target);
+    this.camFlyTargetPos = new THREE.Vector3(...framed.pos);
+  }
+
+  getWiresInCategory(category) {
+    if (!this.rig?.wireById || !category) return [];
+    const list = [];
+    for (const entry of this.rig.wireById.values()) {
+      if (entry.spec.category === category) list.push(entry.spec);
+    }
+    return list;
   }
 
   /**
    * Selects a single 3D wire cable, illuminates it + both endpoint pin rings,
-   * and shows an ultra-readable Dari (Asal) -> Ke (Tujuan) card.
+   * and shows an ultra-readable Dari (Asal) -> Ke (Tujuan) card + sibling chain chips.
    */
-  selectWire(wireId, flyToMid = false) {
+  selectWire(wireId, flyToFrame = false, skipHistory = false) {
     const entry = this.rig?.wireById?.get(wireId);
     if (!entry) return false;
     const w = entry.spec;
+
+    if (!skipHistory) this.pushCurrentToHistory({ type: 'wire', id: wireId });
+    this.currentInspState = { type: 'wire', id: wireId };
+    this.currentInspFocusFn = () => this.focusCameraOnWire(w);
 
     this.selectedWireId = w.id;
     this.selectedPinId = null;
@@ -819,33 +996,45 @@ class SolarTrackerDigitalTwin {
       ? `<button type="button" class="route-node route-dest" data-jump-pin="${escapeHtml(w.toPinId)}" title="Klik untuk inspeksi pin tujuan"><span class="route-lbl">KE</span><strong>${escapeHtml(w.toPin)}</strong></button>`
       : `<span class="route-node route-dest"><span class="route-lbl">KE</span><strong>${escapeHtml(w.toPin)}</strong></span>`;
 
+    const netWires = this.getWiresInCategory(w.category);
+    let relatedHtml = '';
+    if (netMeta) {
+      const chips = netWires.map((nw) => {
+        const activeCls = nw.id === w.id ? ' active' : '';
+        return `<button type="button" class="insp-wire-chip${activeCls}" data-jump-wire="${escapeHtml(nw.id)}" title="Inspeksi kabel ${escapeHtml(nw.fromPin)} → ${escapeHtml(nw.toPin)}">${escapeHtml(nw.fromPin)} → ${escapeHtml(nw.toPin)}</button>`;
+      }).join('');
+      const netBtn = `<button type="button" class="insp-wire-chip" data-jump-net="${escapeHtml(w.category)}"><span class="wire-dot" style="background:${escapeHtml(netMeta.colorHex)}"></span>Sorot Jalur: ${escapeHtml(netMeta.label)}</button>`;
+      const netLblText = /kabel/i.test(netMeta.label) ? netMeta.label : `${netMeta.label} (${netWires.length} kabel)`;
+      relatedHtml = `<span class="insp-rel-lbl">Jalur ${escapeHtml(netLblText)}</span><div class="insp-rel-list">${chips}${netBtn}</div>`;
+    }
+
     this.renderInspectorCard({
       badgeText: 'KABEL',
       badgeColor: netMeta?.colorHex || '#0284c7',
       voltageText: w.voltage,
       titleText: `${w.fromPin} → ${w.toPin}`,
       routeHtml: `${fromEl}<span class="route-arrow" aria-hidden="true">→</span>${toEl}`,
+      relatedHtml,
       extraMetrics: '',
       descText: w.description
     });
 
-    if (flyToMid) {
-      const mid = [
-        (startPt[0] + endPt[0]) * 0.5,
-        (startPt[1] + endPt[1]) * 0.5,
-        (startPt[2] + endPt[2]) * 0.5
-      ];
-      this.focusCameraOnPoint(mid);
+    if (flyToFrame) {
+      this.focusCameraOnWire(w);
     }
     return true;
   }
 
   /**
-   * Selects any physical pin/screw terminal on ESP32, Breadboard, XL4015, RTC, LDR, SCC, Watt Meter, Servo, or Battery!
+   * Selects any physical pin/screw terminal and shows ALL connected wires & target pins!
    */
-  selectPin(pinId, flyCamera = false) {
+  selectPin(pinId, flyCamera = false, skipHistory = false) {
     const pin = this.rig?.pinById?.get(pinId);
     if (!pin) return false;
+
+    if (!skipHistory) this.pushCurrentToHistory({ type: 'pin', id: pinId });
+    this.currentInspState = { type: 'pin', id: pinId };
+    this.currentInspFocusFn = () => this.focusCameraOnPoint(pin.pos);
 
     this.selectedPinId = pin.id;
     this.selectedWireId = null;
@@ -853,22 +1042,21 @@ class SolarTrackerDigitalTwin {
     this.focusedWireNet = null;
     Object.values(this.hotspotButtons || {}).forEach((b) => b.classList.remove('selected'));
 
-    // Find all destination endpoint coordinates for connected wire(s)
     const targetPositions = [];
-    const jumpTargets = [];
+    const connectedWires = [];
     for (const wid of (pin.wireIds || [])) {
       const entry = this.rig.wireById.get(wid);
       if (!entry) continue;
       const w = entry.spec;
       if (w.fromPinId === pin.id) {
         targetPositions.push(w.points[w.points.length - 1]);
-        jumpTargets.push({ label: w.toPin, pinId: w.toPinId });
+        connectedWires.push({ wire: w, targetLabel: w.toPin, targetPinId: w.toPinId });
       } else if (w.toPinId === pin.id) {
         targetPositions.push(w.points[0]);
-        jumpTargets.push({ label: w.fromPin, pinId: w.fromPinId });
+        connectedWires.push({ wire: w, targetLabel: w.fromPin, targetPinId: w.fromPinId });
       } else {
         targetPositions.push(w.points[w.points.length - 1]);
-        jumpTargets.push({ label: `${w.fromPin} → ${w.toPin}`, pinId: w.toPinId });
+        connectedWires.push({ wire: w, targetLabel: `${w.fromPin} → ${w.toPin}`, targetPinId: w.toPinId });
       }
     }
 
@@ -876,14 +1064,29 @@ class SolarTrackerDigitalTwin {
 
     const originNode = `<span class="route-node route-origin"><span class="route-lbl">DARI PIN</span><strong>${escapeHtml(pin.board)} · ${escapeHtml(pin.pinName)}</strong></span>`;
     let destHtml = '';
-    if (jumpTargets.length > 0) {
-      const first = jumpTargets[0];
-      const canJump = !!(first.pinId && this.rig.pinById.has(first.pinId));
+    if (connectedWires.length === 1) {
+      const first = connectedWires[0];
+      const canJump = !!(first.targetPinId && this.rig.pinById.has(first.targetPinId));
       destHtml = canJump
-        ? `<button type="button" class="route-node route-dest" data-jump-pin="${escapeHtml(first.pinId)}" title="Klik untuk lompat ke pin tujuan"><span class="route-lbl">KE</span><strong>${escapeHtml(first.label)}</strong></button>`
-        : `<span class="route-node route-dest"><span class="route-lbl">KE</span><strong>${escapeHtml(first.label)}</strong></span>`;
+        ? `<button type="button" class="route-node route-dest" data-jump-pin="${escapeHtml(first.targetPinId)}" title="Klik untuk lompat ke pin tujuan"><span class="route-lbl">KE</span><strong>${escapeHtml(first.targetLabel)}</strong></button>`
+        : `<span class="route-node route-dest"><span class="route-lbl">KE</span><strong>${escapeHtml(first.targetLabel)}</strong></span>`;
+    } else if (connectedWires.length > 1) {
+      const first = connectedWires[0];
+      const canJump = !!(first.targetPinId && this.rig.pinById.has(first.targetPinId));
+      destHtml = canJump
+        ? `<button type="button" class="route-node route-dest" data-jump-pin="${escapeHtml(first.targetPinId)}" title="Klik untuk lompat ke sambungan utama"><span class="route-lbl">KE (${connectedWires.length} KABEL)</span><strong>${escapeHtml(first.targetLabel)}</strong></button>`
+        : `<span class="route-node route-dest"><span class="route-lbl">KE (${connectedWires.length} KABEL)</span><strong>${escapeHtml(first.targetLabel)}</strong></span>`;
     } else {
       destHtml = `<span class="route-node route-empty"><span class="route-lbl">STATUS</span><strong>${escapeHtml(pin.connectedTo?.[0] || 'Kosong')}</strong></span>`;
+    }
+
+    let relatedHtml = '';
+    if (connectedWires.length > 0) {
+      const chips = connectedWires.map(({ wire, targetLabel }) => {
+        const netColor = WIRE_NET_META[wire.category]?.colorHex || '#38bdf8';
+        return `<button type="button" class="insp-wire-chip" data-jump-wire="${escapeHtml(wire.id)}" title="Inspeksi kabel (${escapeHtml(wire.voltage)})"><span class="wire-dot" style="background:${escapeHtml(netColor)}"></span>Kabel → ${escapeHtml(targetLabel)}</button>`;
+      }).join('');
+      relatedHtml = `<span class="insp-rel-lbl">Kabel Terhubung (${connectedWires.length})</span><div class="insp-rel-list">${chips}</div>`;
     }
 
     const isActive = pin.status === 'AKTIF';
@@ -893,6 +1096,7 @@ class SolarTrackerDigitalTwin {
       voltageText: pin.voltage,
       titleText: `${pin.board} · ${pin.pinName}`,
       routeHtml: `${originNode}<span class="route-arrow" aria-hidden="true">→</span>${destHtml}`,
+      relatedHtml,
       extraMetrics: '',
       descText: pin.detail
     });
@@ -903,7 +1107,7 @@ class SolarTrackerDigitalTwin {
     return true;
   }
 
-  setWiringNetFocus(netKey) {
+  setWiringNetFocus(netKey, skipHistory = false) {
     this.focusedWireNet = netKey || null;
     this.selectedWireId = null;
     this.selectedPinId = null;
@@ -925,6 +1129,10 @@ class SolarTrackerDigitalTwin {
 
     if (this.focusedWireNet && WIRE_NET_META[this.focusedWireNet]) {
       const meta = WIRE_NET_META[this.focusedWireNet];
+      if (!skipHistory) this.pushCurrentToHistory({ type: 'net', id: this.focusedWireNet });
+      this.currentInspState = { type: 'net', id: this.focusedWireNet };
+      this.currentInspFocusFn = () => this.flyToPreset(meta.preset || 'overview');
+
       this.selectedHotspot = null;
       Object.values(this.hotspotButtons || {}).forEach((b) => b.classList.remove('selected'));
       if (meta.preset) {
@@ -933,22 +1141,76 @@ class SolarTrackerDigitalTwin {
           b.classList.toggle('active', b.dataset['3dCam'] === meta.preset);
         });
       }
+
+      const netWires = this.getWiresInCategory(this.focusedWireNet);
+      const chipsHtml = netWires.map((w) => (
+        `<button type="button" class="insp-wire-chip" data-jump-wire="${escapeHtml(w.id)}"><span class="wire-dot" style="background:${escapeHtml(meta.colorHex)}"></span>${escapeHtml(w.fromPin)} → ${escapeHtml(w.toPin)}</button>`
+      )).join('');
+      const relatedHtml = netWires.length
+        ? `<span class="insp-rel-lbl">Daftar Kabel di Jalur Ini (${netWires.length}) · Klik untuk Detail Dari → Ke</span><div class="insp-rel-list">${chipsHtml}</div>`
+        : '';
+
       this.renderInspectorCard({
         badgeText: 'JALUR KABEL',
         badgeColor: meta.colorHex,
         voltageText: '',
         titleText: meta.label,
         routeHtml: '',
+        relatedHtml,
         extraMetrics: meta.pins,
         descText: meta.summary
       });
     } else if (!this.selectedHotspot) {
+      this.currentInspState = null;
+      this.currentInspFocusFn = null;
+      this.updateInspActionButtons();
       const card = document.getElementById('rig3dInspector');
       if (card) card.style.display = 'none';
     }
   }
 
+  setSidePanelTab(tabName) {
+    const next = tabName === 'wires' ? 'wires' : 'focus';
+    this.sidePanelTab = next;
+    document.querySelectorAll('[data-panel-tab]').forEach((btn) => {
+      const active = btn.dataset.panelTab === next;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', String(active));
+    });
+    document.querySelectorAll('[data-panel-pane]').forEach((pane) => {
+      pane.classList.toggle('active', pane.dataset.panelPane === next);
+    });
+  }
+
+  resetCameraOverview() {
+    this.camVelocity.set(0, 0, 0);
+    this.freeMoveImpulse.set(0, 0, 0);
+    this.freeZoomImpulse = 0;
+    this.flyToPreset('overview');
+    document.querySelectorAll('[data-3d-cam]').forEach((b) => {
+      b.classList.toggle('active', b.dataset['3dCam'] === 'overview');
+    });
+  }
+
   bindUiControls() {
+    // Collapsible ? Panduan camera help popover
+    const btnCamHelp = document.getElementById('btnCamHelp');
+    const helpPopover = document.getElementById('rig3dHelpPopover');
+    if (btnCamHelp && helpPopover) {
+      btnCamHelp.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.helpOpen = !this.helpOpen;
+        helpPopover.style.display = this.helpOpen ? 'flex' : 'none';
+        btnCamHelp.setAttribute('aria-expanded', String(this.helpOpen));
+      });
+    }
+
+    // Side panel 2-tab switching (Fokus Area | Jalur Kabel)
+    document.querySelectorAll('[data-panel-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.setSidePanelTab(btn.dataset.panelTab);
+      });
+    });
 
     document.querySelectorAll('[data-3d-env]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -1065,7 +1327,6 @@ class SolarTrackerDigitalTwin {
         this.camFlyTargetLook = null;
         this.navHeld.add(action);
         btn.classList.add('active');
-        // Small immediate impulse so a single tap moves smoothly too
         const dist = this.camera.position.distanceTo(this.controls.target);
         const step = clamp(dist * 0.14, 0.04, 0.28);
         if (action === 'fwd') this.queueFreeformMove(0, 0, step);
@@ -1091,14 +1352,7 @@ class SolarTrackerDigitalTwin {
     if (btnZoomIn) btnZoomIn.addEventListener('click', () => this.zoomCameraStep(-0.24));
     if (btnZoomOut) btnZoomOut.addEventListener('click', () => this.zoomCameraStep(0.28));
     if (btnCamReset) {
-      btnCamReset.addEventListener('click', () => {
-        this.freeMoveImpulse.set(0, 0, 0);
-        this.freeZoomImpulse = 0;
-        this.flyToPreset('overview');
-        document.querySelectorAll('[data-3d-cam]').forEach((b) => {
-          b.classList.toggle('active', b.dataset['3dCam'] === 'overview');
-        });
-      });
+      btnCamReset.addEventListener('click', () => this.resetCameraOverview());
     }
 
     const navKeys = new Set(['w', 's', 'a', 'd', 'q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
@@ -1107,6 +1361,7 @@ class SolarTrackerDigitalTwin {
       if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
       const k = e.key.toLowerCase();
       if (k === 'h') setSideCollapsed(!this.sideCollapsed);
+      else if (k === 'r') this.resetCameraOverview();
       else if (e.key === 'Escape') this.clearSelection();
       else if (navKeys.has(k)) {
         e.preventDefault();
@@ -1134,8 +1389,27 @@ class SolarTrackerDigitalTwin {
     window.addEventListener('blur', () => {
       this.keysHeld.clear();
       this.navHeld.clear();
+      this.camVelocity.set(0, 0, 0);
       document.querySelectorAll('[data-cam-hold].active').forEach((b) => b.classList.remove('active'));
     });
+
+    const btnInspBack = document.getElementById('btnInspBack');
+    if (btnInspBack) {
+      btnInspBack.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.goBackInspector();
+      });
+    }
+
+    const btnInspFocus = document.getElementById('btnInspFocus');
+    if (btnInspFocus) {
+      btnInspFocus.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof this.currentInspFocusFn === 'function') {
+          this.currentInspFocusFn();
+        }
+      });
+    }
 
     const btnCloseInsp = document.getElementById('btnRig3dInspClose');
     if (btnCloseInsp) {
@@ -1297,6 +1571,8 @@ class SolarTrackerDigitalTwin {
 
   flyToPreset(name) {
     const p = CAMERA_PRESETS[name] || CAMERA_PRESETS.overview;
+    this.camVelocity.set(0, 0, 0);
+    this.freeMoveImpulse.set(0, 0, 0);
     this.camFlyTargetPos = new THREE.Vector3(...p.pos);
     this.camFlyTargetLook = new THREE.Vector3(...p.target);
 
@@ -1308,20 +1584,31 @@ class SolarTrackerDigitalTwin {
     }
   }
 
-  selectHotspot(id) {
-    this.selectedHotspot = id;
-    this.selectedWireId = null;
-    this.selectedPinId = null;
-    if (this.rig) this.rig.setSelectionHighlight([], null, []);
-
+  selectHotspot(id, skipHistory = false) {
     if (!id || !HOTSPOT_META[id]) {
+      this.selectedHotspot = null;
+      this.selectedWireId = null;
+      this.selectedPinId = null;
+      this.currentInspState = null;
+      this.currentInspFocusFn = null;
+      this.updateInspActionButtons();
+      if (this.rig) this.rig.setSelectionHighlight([], null, []);
       const card = document.getElementById('rig3dInspector');
       if (card) card.style.display = 'none';
       Object.values(this.hotspotButtons || {}).forEach((b) => b.classList.remove('selected'));
       return;
     }
 
+    if (!skipHistory) this.pushCurrentToHistory({ type: 'hotspot', id });
     const meta = HOTSPOT_META[id];
+    this.currentInspState = { type: 'hotspot', id };
+    this.currentInspFocusFn = () => this.flyToPreset(meta.preset);
+
+    this.selectedHotspot = id;
+    this.selectedWireId = null;
+    this.selectedPinId = null;
+    if (this.rig) this.rig.setSelectionHighlight([], null, []);
+
     this.flyToPreset(meta.preset);
     document.querySelectorAll('[data-3d-cam]').forEach((b) => {
       b.classList.toggle('active', b.dataset['3dCam'] === meta.preset);
@@ -1379,8 +1666,33 @@ class SolarTrackerDigitalTwin {
       metrics = `Tegangan Aki (Est.): ${e.batteryVoltage.toFixed(1)} V · Status: ${e.charging ? 'Mengisi dari Panel' : 'Siaga / Gelap'} · LOAD 12V → INA219 → XL4015`;
     } else if (this.selectedHotspot === 'battery') {
       metrics = `INCOE SA-20 12V 22Ah · Tegangan Est.: ${e.batteryVoltage.toFixed(1)} V (${e.batterySoc}%) · 3V3 Sag: ${d?.pwr?.sagMv ?? 0} mV`;
+    } else if (this.selectedHotspot === 'ups_switch') {
+      metrics = this.upsSwitchOn
+        ? `Status: ON (I) · UPS+ (${e.upsOutV.toFixed(2)} V) tersambung ke ESP32 5V · Matikan ke (O) sebelum flash USB laptop`
+        : `Status: OFF (O) · Jalur 5V UPS diputus (0 V ke ESP32) · AMAN colok USB laptop untuk flash ESP32`;
     } else if (this.selectedHotspot === 'ups') {
-      metrics = `IN USB-C: ${e.upsInV.toFixed(2)} V · Baterai 2×18650 (Paralel): ${e.upsBattV.toFixed(2)} V (${e.upsSocPct}%) · OUT Boost (U4/2R2): ${e.upsOutV.toFixed(2)} V → ESP32 (${e.upsCharging ? 'Mengisi & Backup' : 'Mode Baterai'})`;
+      const swLbl = this.upsSwitchOn ? 'Switch ON (I) → ESP32' : 'Switch OFF (O · Diputus)';
+      metrics = `IN USB-C: ${e.upsInV.toFixed(2)} V · Baterai 2×18650: ${e.upsBattV.toFixed(2)} V (${e.upsSocPct}%) · OUT Boost: ${e.upsOutV.toFixed(2)} V · ${swLbl}`;
+    }
+
+    let routeHtml = '';
+    if (this.selectedHotspot === 'ups_switch' || this.selectedHotspot === 'ups') {
+      routeHtml = `<button type="button" class="route-node ${this.upsSwitchOn ? 'route-origin' : 'route-empty'}" data-toggle-ups-switch="1" title="Klik untuk simulasi tekan saklar I/O"><span class="route-lbl">SIMULASI SAKLAR 5V</span><strong>${this.upsSwitchOn ? 'Posisi I (ON) · Klik untuk Matikan (O)' : 'Posisi O (OFF) · Klik untuk Nyalakan (I)'}</strong></button>`;
+    }
+
+    const nets = HOTSPOT_WIRE_NET_MAP[this.selectedHotspot] || [];
+    let relatedHtml = '';
+    if (nets.length > 0) {
+      const netChips = nets
+        .filter((nk) => WIRE_NET_META[nk])
+        .map((nk) => {
+          const nm = WIRE_NET_META[nk];
+          return `<button type="button" class="insp-wire-chip" data-jump-net="${escapeHtml(nk)}"><span class="wire-dot" style="background:${escapeHtml(nm.colorHex)}"></span>${escapeHtml(nm.label)}</button>`;
+        })
+        .join('');
+      if (netChips) {
+        relatedHtml = `<span class="insp-rel-lbl">Telusuri Jalur Kabel Komponen Ini</span><div class="insp-rel-list">${netChips}</div>`;
+      }
     }
 
     this.renderInspectorCard({
@@ -1388,7 +1700,8 @@ class SolarTrackerDigitalTwin {
       badgeColor: '#007aff',
       voltageText: '',
       titleText: meta.title,
-      routeHtml: '',
+      routeHtml,
+      relatedHtml,
       extraMetrics: metrics,
       descText: meta.wiring
     });
@@ -1513,6 +1826,7 @@ class SolarTrackerDigitalTwin {
         const groupMatch = !this.activeMacroGroup || item.group === this.activeMacroGroup;
         if (!groupMatch) {
           item.el.style.opacity = '0';
+          item.el.style.display = 'none';
           continue;
         }
         item.anchor.getWorldPosition(this._vec3);
@@ -1522,10 +1836,12 @@ class SolarTrackerDigitalTwin {
           this._vec3.x > -0.95 && this._vec3.x < 0.95 && this._vec3.y > -0.92 && this._vec3.y < 0.92;
         if (!inView) {
           item.el.style.opacity = '0';
+          item.el.style.display = 'none';
           continue;
         }
         const sx = (this._vec3.x * 0.5 + 0.5) * w;
         const sy = (-this._vec3.y * 0.5 + 0.5) * h;
+        item.el.style.display = 'block';
         item.el.style.opacity = '1';
         item.el.style.transform = `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(1)}px, 0) translate(-50%, -115%)`;
       }
@@ -1569,10 +1885,10 @@ class SolarTrackerDigitalTwin {
     this.rig.updateTelemetryVisuals(d, this.lastElec, dt);
 
     if (this.slot === 'full' && this.camFlyTargetPos && this.camFlyTargetLook) {
-      const k = 1 - Math.exp(-6.5 * dt);
+      const k = 1 - Math.exp(-8.5 * dt);
       this.camera.position.lerp(this.camFlyTargetPos, k);
       this.controls.target.lerp(this.camFlyTargetLook, k);
-      if (this.camera.position.distanceTo(this.camFlyTargetPos) < 0.008) {
+      if (this.camera.position.distanceTo(this.camFlyTargetPos) < 0.006 && this.controls.target.distanceTo(this.camFlyTargetLook) < 0.006) {
         this.camera.position.copy(this.camFlyTargetPos);
         this.controls.target.copy(this.camFlyTargetLook);
         this.camFlyTargetPos = null;
@@ -1581,7 +1897,7 @@ class SolarTrackerDigitalTwin {
     }
 
     if (this.slot === 'full') {
-      // 1) Apply continuous freeform held movement (W/S maju-mundur, A/D strafe, Q/E/arrows up-down)
+      // 1) Smooth inertia-driven freeform held movement (W/S maju-mundur, A/D strafe, Q/E/arrows up-down)
       const moveFwd = (this.keysHeld.has('w') || this.navHeld.has('fwd') ? 1 : 0)
         - (this.keysHeld.has('s') || this.navHeld.has('back') ? 1 : 0);
       const moveRight = (this.keysHeld.has('d') || this.keysHeld.has('arrowright') || this.navHeld.has('right') ? 1 : 0)
@@ -1589,11 +1905,11 @@ class SolarTrackerDigitalTwin {
       const moveUp = (this.keysHeld.has('e') || this.keysHeld.has('arrowup') || this.navHeld.has('up') ? 1 : 0)
         - (this.keysHeld.has('q') || this.keysHeld.has('arrowdown') || this.navHeld.has('down') ? 1 : 0);
 
-      this._moveVec.set(0, 0, 0);
+      const desiredVel = this._vec3B.set(0, 0, 0);
       if (moveFwd || moveRight || moveUp) {
         const curDist = this.camera.position.distanceTo(this.controls.target);
-        const speedBoost = this.keysHeld.has('shift') ? 2.0 : 1.0;
-        const speed = clamp(curDist * 0.95, 0.20, 2.2) * speedBoost * dt;
+        const speedBoost = this.keysHeld.has('shift') ? 1.9 : 1.0;
+        const speed = clamp(curDist * 1.15, 0.24, 2.8) * speedBoost;
 
         this.camera.getWorldDirection(this._camFwd).normalize();
         this._camRight.crossVectors(this._camFwd, this._upAxis);
@@ -1602,10 +1918,18 @@ class SolarTrackerDigitalTwin {
         } else {
           this._camRight.normalize();
         }
-        if (moveFwd) this._moveVec.addScaledVector(this._camFwd, moveFwd * speed);
-        if (moveRight) this._moveVec.addScaledVector(this._camRight, moveRight * speed);
-        if (moveUp) this._moveVec.y += moveUp * speed;
+        if (moveFwd) desiredVel.addScaledVector(this._camFwd, moveFwd * speed);
+        if (moveRight) desiredVel.addScaledVector(this._camRight, moveRight * speed);
+        if (moveUp) desiredVel.y += moveUp * speed;
       }
+
+      const velAlpha = 1 - Math.exp(-12 * dt);
+      this.camVelocity.lerp(desiredVel, velAlpha);
+      if (this.camVelocity.lengthSq() < 1e-6 && desiredVel.lengthSq() === 0) {
+        this.camVelocity.set(0, 0, 0);
+      }
+
+      this._moveVec.copy(this.camVelocity).multiplyScalar(dt);
 
       // 2) Apply smoothly damped one-shot freeform impulses (Shift+Scroll, Alt+Scroll, tap buttons)
       if (this.freeMoveImpulse.lengthSq() > 1e-8) {
